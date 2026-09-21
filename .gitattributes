@@ -1,0 +1,36 @@
+# 统一换行符，避免 Windows / macOS / Linux 之间产生整文件 diff。
+* text=auto
+
+*.dart    text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.md      text eol=lf
+*.json    text eol=lf
+*.py      text eol=lf
+*.xml     text eol=lf
+*.kt      text eol=lf
+*.java    text eol=lf
+*.gradle  text eol=lf
+*.kts     text eol=lf
+*.properties text eol=lf
+
+# Gradle 的 POSIX 启动脚本必须是 LF，Windows 批处理必须是 CRLF。
+gradlew    text eol=lf
+gradlew.bat text eol=crlf
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+
+# 二进制文件不做换行符转换。
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.webp     binary
+*.ico      binary
+*.jar      binary
+*.keystore binary
+*.jks      binary
+
+# 生成文件：在 GitHub 上默认折叠 diff。
+lib/core/data/tag_catalog.dart linguist-generated=true
+tool/tags_raw.json             linguist-generated=true
+pubspec.lock                   linguist-generated=true

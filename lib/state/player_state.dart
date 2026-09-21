@@ -1,0 +1,549 @@
+// 命名参数无法使用私有初始化形参（`this._settings`），此处显式赋值。
+// ignore_for_file: prefer_initializing_formals
+
+import 'dart:async';
+import 'dart:ui' show Size;
+
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
+import 'package:just_audio/just_audio.dart' as ja;
+import 'package:just_audio_background/just_audio_background.dart';
+import 'package:palette_generator/palette_generator.dart';
+import 'package:path/path.dart' as p;
+
+import '../core/api/api_client.dart';
+import '../core/models/track.dart';
+import '../core/models/work.dart';
+import 'library_state.dart';
+import 'settings_state.dart';
+
+/// 播放队列中的一项。
+class PlayItem {
+  const PlayItem({
+    required this.workId,
+    required this.workTitle,
+    required this.title,
+    required this.url,
+    required this.coverUrl,
+    this.hash,
+    this.circleName = '',
+    this.folderLabel = '',
+    this.duration,
+    this.localPath,
+  });
+
+  final int workId;
+  final String workTitle;
+  final String title;
+  final String url;
+  final String coverUrl;
+  final String? hash;
+  final String circleName;
+  final String folderLabel;
+  final Duration? duration;
+  final String? localPath;
+
+  bool get isLocal => (localPath ?? '').isNotEmpty;
+}
+
+/// 播放器状态：队列管理、进度、倍速、定时关闭、封面取色。
+class PlayerState extends ChangeNotifier {
+  PlayerState({required SettingsState settings, required LibraryState library})
+    : _settings = settings,
+      _library = library {
+    _player.setSpeed(settings.playbackSpeed);
+    _bind();
+  }
+
+  final SettingsState _settings;
+  final LibraryState _library;
+  final ApiClient _api = ApiClient.instance;
+
+  final ja.AudioPlayer _player = ja.AudioPlayer();
+
+  ja.AudioPlayer get player => _player;
+
+  List<PlayItem> _queue = const [];
+  Work? _work;
+  int _currentIndex = -1;
+  String? _error;
+  Timer? _sleepTimer;
+  DateTime? _sleepDeadline;
+  Timer? _progressTimer;
+  String? _accentSourceUrl;
+
+  List<PlayItem> get queue => _queue;
+  Work? get work => _work;
+  int get currentIndex => _currentIndex;
+  String? get error => _error;
+  bool get hasQueue => _queue.isNotEmpty;
+  bool get playing => _player.playing;
+  bool get hasNext => _currentIndex >= 0 && _currentIndex < _queue.length - 1;
+  bool get hasPrevious => _currentIndex > 0;
+  double get speed => _player.speed;
+  bool get shuffleEnabled => _player.shuffleModeEnabled;
+  ja.LoopMode get loopMode => _player.loopMode;
+
+  PlayItem? get currentItem =>
+      (_currentIndex >= 0 && _currentIndex < _queue.length)
+      ? _queue[_currentIndex]
+      : null;
+
+  DateTime? get sleepDeadline => _sleepDeadline;
+
+  Duration get sleepRemaining {
+    final d = _sleepDeadline;
+    if (d == null) return Duration.zero;
+    final left = d.difference(DateTime.now());
+    return left.isNegative ? Duration.zero : left;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 事件绑定
+  // ---------------------------------------------------------------------------
+
+  void _bind() {
+    _player.currentIndexStream.listen((index) {
+      if (index == null) return;
+      _currentIndex = index;
+      _onItemChanged();
+    });
+    _player.playerStateStream.listen((state) {
+      if (state.processingState == ja.ProcessingState.completed) {
+        if (!_settings.autoPlayNext) {
+          _player.pause();
+          _player.seek(Duration.zero, index: _currentIndex);
+        } else if (_player.loopMode == ja.LoopMode.off && !hasNext) {
+          // 队列播完，回到开头并暂停。
+          _player.pause();
+          _player.seek(Duration.zero, index: 0);
+        }
+      }
+      notifyListeners();
+    });
+    _player.errorStream.listen((e) {
+      _error = '播放失败：${e.message ?? e.code}';
+      notifyListeners();
+    });
+    // 每 5 秒保存一次收听进度，用于「继续播放」。
+    _progressTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (_player.playing) _saveProgress();
+    });
+  }
+
+  Future<void> _onItemChanged() async {
+    final item = currentItem;
+    if (item == null) return;
+    _saveProgress();
+    notifyListeners();
+    await _applyAccent(item.coverUrl);
+  }
+
+  void _saveProgress() {
+    final item = currentItem;
+    if (item == null) return;
+    final hash = item.hash;
+    if (hash == null || hash.isEmpty) return;
+    final pos = _player.position.inMilliseconds;
+    final dur = (_player.duration?.inMilliseconds) ?? 0;
+    if (dur <= 0 || pos < 3000) return;
+    _library.saveProgress(
+      hash: hash,
+      workId: item.workId,
+      positionMs: pos,
+      durationMs: dur,
+    );
+  }
+
+  /// 从封面提取主色并交给设置状态作为动态强调色。
+  Future<void> _applyAccent(String coverUrl) async {
+    if (!_settings.useCoverAccent) return;
+    if (coverUrl.isEmpty || _accentSourceUrl == coverUrl) return;
+    _accentSourceUrl = coverUrl;
+    try {
+      final palette = await PaletteGenerator.fromImageProvider(
+        CachedNetworkImageProvider(coverUrl),
+        size: const Size(96, 96),
+        maximumColorCount: 12,
+      );
+      final color =
+          palette.vibrantColor?.color ??
+          palette.darkVibrantColor?.color ??
+          palette.dominantColor?.color;
+      if (color != null) _settings.setDynamicAccent(color);
+    } catch (_) {
+      // 取色失败不影响播放。
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 播放控制
+  // ---------------------------------------------------------------------------
+
+  /// 播放某个作品的曲目。
+  ///
+  /// 返回实际入队的曲目数量；`unplayable` 为无法解析出地址的曲目数量
+  /// （通常是付费内容且未登录）。
+  Future<({int queued, int unplayable})> playWork(
+    Work work,
+    List<AudioTrack> tracks, {
+    int startIndex = 0,
+    bool shuffle = false,
+  }) async {
+    final cover = _api.coverUrl(work.id, type: 'main');
+    // 优先使用本地已下载文件。
+    final localPaths = await _library.downloadedPaths(work.id);
+
+    final items = <PlayItem>[];
+    var unplayable = 0;
+    for (final t in tracks) {
+      final hash = t.hash;
+      final local = hash == null ? null : localPaths[hash];
+      final url = (local != null && local.isNotEmpty)
+          ? null
+          : _api.resolveStreamUrl(
+              t.node,
+              preferLowQuality: _settings.preferLowQuality,
+            );
+      if (local == null && url == null) {
+        unplayable++;
+        continue;
+      }
+      items.add(
+        PlayItem(
+          workId: work.id,
+          workTitle: work.title,
+          title: t.title,
+          hash: hash,
+          url: url ?? '',
+          localPath: local,
+          coverUrl: cover,
+          circleName: work.circleName,
+          folderLabel: t.folderLabel,
+          duration: t.hasDuration
+              ? Duration(seconds: t.duration.round())
+              : null,
+        ),
+      );
+    }
+
+    if (items.isEmpty) {
+      _error = unplayable > 0 ? '该作品的音频需要登录后才能播放。' : '没有可播放的曲目。';
+      notifyListeners();
+      return (queued: 0, unplayable: unplayable);
+    }
+
+    final index = startIndex.clamp(0, items.length - 1);
+    _work = work;
+    await _load(items, index: index, shuffle: shuffle);
+    await _library.recordHistory(work);
+    _player.play();
+    notifyListeners();
+    return (queued: items.length, unplayable: unplayable);
+  }
+
+  /// 直接播放已下载到本地的音频（无需网络）。
+  ///
+  /// [hashToPath] 为 `曲目 hash -> 本地文件路径`。返回是否成功入队。
+  Future<bool> playLocalFiles(Work work, Map<String, String> hashToPath) async {
+    if (hashToPath.isEmpty) {
+      _error = '没有找到本地文件。';
+      notifyListeners();
+      return false;
+    }
+    final cover = _api.coverUrl(work.id, type: 'main');
+    final items =
+        hashToPath.entries
+            .map(
+              (e) => PlayItem(
+                workId: work.id,
+                workTitle: work.title,
+                title: p.basename(e.value),
+                hash: e.key,
+                url: '',
+                localPath: e.value,
+                coverUrl: cover,
+                circleName: work.circleName,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => a.title.compareTo(b.title));
+
+    _work = work;
+    await _load(items);
+    await _library.recordHistory(work);
+    await _player.play();
+    notifyListeners();
+    return true;
+  }
+
+  /// 播放单曲（例如曲目列表里的「播放这一首」）。
+  Future<void> playSingle(Work work, AudioTrack track) async {
+    final cover = _api.coverUrl(work.id, type: 'main');
+    final localPaths = await _library.downloadedPaths(work.id);
+    final hash = track.hash;
+    final local = hash == null ? null : localPaths[hash];
+    final url = (local != null && local.isNotEmpty)
+        ? null
+        : _api.resolveStreamUrl(
+            track.node,
+            preferLowQuality: _settings.preferLowQuality,
+          );
+    if (local == null && url == null) {
+      _error = '无法解析该曲目的播放地址，可能需要登录。';
+      notifyListeners();
+      return;
+    }
+    final item = PlayItem(
+      workId: work.id,
+      workTitle: work.title,
+      title: track.title,
+      hash: hash,
+      url: url ?? '',
+      localPath: local,
+      coverUrl: cover,
+      circleName: work.circleName,
+      folderLabel: track.folderLabel,
+      duration: track.hasDuration
+          ? Duration(seconds: track.duration.round())
+          : null,
+    );
+    _work = work;
+    await _load([item]);
+    await _library.recordHistory(work);
+    _player.play();
+    notifyListeners();
+  }
+
+  Future<void> _load(
+    List<PlayItem> items, {
+    int index = 0,
+    bool shuffle = false,
+  }) async {
+    _error = null;
+    _queue = items;
+    _currentIndex = index;
+    notifyListeners();
+
+    final sources = items.map(_toSource).toList(growable: false);
+    try {
+      await _player.setAudioSources(
+        sources,
+        initialIndex: index,
+        initialPosition: Duration.zero,
+      );
+      await _player.setSpeed(_settings.playbackSpeed);
+      await _player.setShuffleModeEnabled(shuffle);
+      if (shuffle) await _player.shuffle();
+    } catch (e) {
+      _error = '加载音频失败：$e';
+      notifyListeners();
+    }
+  }
+
+  ja.AudioSource _toSource(PlayItem item) {
+    final uri = item.isLocal ? Uri.file(item.localPath!) : Uri.parse(item.url);
+    return ja.AudioSource.uri(
+      uri,
+      tag: MediaItem(
+        id: item.isLocal ? 'local:${item.localPath}' : item.url,
+        title: item.title,
+        album: item.workTitle,
+        artist: item.circleName.isEmpty ? null : item.circleName,
+        duration: item.duration,
+        artUri: item.coverUrl.isEmpty ? null : Uri.parse(item.coverUrl),
+      ),
+    );
+  }
+
+  /// 重新设定当前作品（用于最近播放列表恢复队列时补充元数据）。
+  void attachWork(Work work) {
+    _work = work;
+    notifyListeners();
+  }
+
+  Future<void> toggle() async {
+    if (_player.playing) {
+      await _player.pause();
+      _saveProgress();
+    } else {
+      await _player.play();
+    }
+    notifyListeners();
+  }
+
+  Future<void> pause() async {
+    await _player.pause();
+    _saveProgress();
+    notifyListeners();
+  }
+
+  Future<void> next() async {
+    if (!hasNext) return;
+    await _player.seek(Duration.zero, index: _currentIndex + 1);
+    if (!_player.playing) await _player.play();
+  }
+
+  Future<void> previous() async {
+    // 播放超过 3 秒时先回到本曲开头。
+    if (_player.position.inSeconds > 3 || !hasPrevious) {
+      await _player.seek(Duration.zero);
+      return;
+    }
+    await _player.seek(Duration.zero, index: _currentIndex - 1);
+    if (!_player.playing) await _player.play();
+  }
+
+  Future<void> seek(Duration position) => _player.seek(position);
+
+  Future<void> seekToIndex(int index) async {
+    if (index < 0 || index >= _queue.length) return;
+    await _player.seek(Duration.zero, index: index);
+    await _player.play();
+  }
+
+  Future<void> setSpeed(double value) async {
+    await _player.setSpeed(value);
+    _settings.playbackSpeed = value;
+    notifyListeners();
+  }
+
+  Future<void> toggleShuffle() async {
+    final enable = !_player.shuffleModeEnabled;
+    await _player.setShuffleModeEnabled(enable);
+    if (enable) await _player.shuffle();
+    notifyListeners();
+  }
+
+  Future<void> cycleLoopMode() async {
+    final next = switch (_player.loopMode) {
+      ja.LoopMode.off => ja.LoopMode.all,
+      ja.LoopMode.all => ja.LoopMode.one,
+      ja.LoopMode.one => ja.LoopMode.off,
+    };
+    await _player.setLoopMode(next);
+    notifyListeners();
+  }
+
+  Future<void> stop() async {
+    _saveProgress();
+    await _player.stop();
+    _queue = const [];
+    _currentIndex = -1;
+    _work = null;
+    notifyListeners();
+  }
+
+  /// 移除队列中的某一首；当前播放项之前的位置会被顺移。
+  Future<void> removeFromQueue(int index) async {
+    if (index < 0 || index >= _queue.length) return;
+    final next = [..._queue]..removeAt(index);
+    if (next.isEmpty) {
+      await stop();
+      return;
+    }
+    final wasCurrent = index == _currentIndex;
+    final resumeIndex = wasCurrent
+        ? index.clamp(0, next.length - 1)
+        : (index < _currentIndex ? _currentIndex - 1 : _currentIndex);
+    final wasPlaying = _player.playing;
+    final position = wasCurrent ? Duration.zero : _player.position;
+    _queue = next;
+    try {
+      await _player.setAudioSources(
+        next.map(_toSource).toList(growable: false),
+        initialIndex: resumeIndex,
+        initialPosition: position,
+      );
+      if (wasPlaying) await _player.play();
+    } catch (e) {
+      _error = '更新队列失败：$e';
+    }
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // 定时关闭
+  // ---------------------------------------------------------------------------
+
+  void setSleepTimer(int minutes) {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepDeadline = null;
+    _settings.sleepMinutes = minutes;
+    if (minutes <= 0) {
+      notifyListeners();
+      return;
+    }
+    _sleepDeadline = DateTime.now().add(Duration(minutes: minutes));
+    _sleepTimer = Timer(Duration(minutes: minutes), () async {
+      await pause();
+      _sleepDeadline = null;
+      _sleepTimer = null;
+      _settings.sleepMinutes = 0;
+      notifyListeners();
+    });
+    notifyListeners();
+  }
+
+  void clearSleepTimer() => setSleepTimer(0);
+
+  /// 用新令牌刷新当前队列的播放地址（登录后付费内容才可播放）。
+  Future<void> refreshTokens() async {
+    if (_queue.isEmpty) return;
+    var changed = false;
+    final refreshed = <PlayItem>[];
+    for (final item in _queue) {
+      if (item.isLocal || item.url.isNotEmpty) {
+        refreshed.add(item);
+        continue;
+      }
+      final hash = item.hash;
+      if (hash == null || hash.isEmpty) {
+        refreshed.add(item);
+        continue;
+      }
+      final url = _api.mediaStreamUrl(hash);
+      changed = true;
+      refreshed.add(
+        PlayItem(
+          workId: item.workId,
+          workTitle: item.workTitle,
+          title: item.title,
+          hash: item.hash,
+          url: url,
+          coverUrl: item.coverUrl,
+          circleName: item.circleName,
+          folderLabel: item.folderLabel,
+          duration: item.duration,
+        ),
+      );
+    }
+    if (!changed) return;
+    final index = _currentIndex;
+    _queue = refreshed;
+    try {
+      await _player.setAudioSources(
+        refreshed.map(_toSource).toList(growable: false),
+        initialIndex: index.clamp(0, refreshed.length - 1),
+      );
+    } catch (_) {
+      // 忽略：下一次播放会重新加载。
+    }
+    notifyListeners();
+  }
+
+  void clearError() {
+    _error = null;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _sleepTimer?.cancel();
+    _progressTimer?.cancel();
+    _saveProgress();
+    _player.dispose();
+    super.dispose();
+  }
+}
