@@ -23,7 +23,11 @@ class DownloadsScreen extends StatelessWidget {
     final rows = library.downloads;
     final active = downloads.tasks.where((t) => t.isActive).toList();
     final failed = downloads.tasks
-        .where((t) => t.status == DownloadStatus.failed)
+        .where(
+          (t) =>
+              t.status == DownloadStatus.failed ||
+              t.status == DownloadStatus.paused,
+        )
         .toList();
 
     // 按作品聚合已完成的下载。
@@ -48,55 +52,62 @@ class DownloadsScreen extends StatelessWidget {
             ),
         ],
       ),
-      body: rows.isEmpty && active.isEmpty && failed.isEmpty
-          ? EmptyView(
-              message: l('download.empty'),
-              icon: Icons.download_done_rounded,
-            )
-          : ListView(
-              padding: const EdgeInsets.only(bottom: 32),
-              children: [
-                if (active.isNotEmpty) ...[
-                  SectionHeader(
-                    title: l('download.downloading'),
-                    icon: Icons.downloading_rounded,
-                    subtitle: Fmt.size(
-                      active.fold(0, (s, t) => s + t.received),
-                    ),
-                  ),
-                  for (final task in active)
-                    _TaskTile(
-                      task: task,
-                      onCancel: () => downloads.cancel(task),
-                    ),
-                ],
-                if (failed.isNotEmpty) ...[
-                  SectionHeader(
-                    title: l('download.failed'),
-                    icon: Icons.error_outline_rounded,
-                  ),
-                  for (final task in failed)
-                    _TaskTile(
-                      task: task,
-                      onCancel: () => downloads.retry(task),
-                      retry: true,
-                    ),
-                ],
-                if (byWork.isNotEmpty)
-                  SectionHeader(
-                    title: l('common.total', {'n': byWork.length}),
-                    icon: Icons.offline_pin_rounded,
-                    subtitle: Fmt.size(library.downloadBytes),
-                  ),
-                for (final entry in byWork.entries)
-                  _WorkDownloadGroup(
-                    workId: entry.key,
-                    rows: entry.value,
-                    onPlay: (work) => _playWork(context, work),
-                    onDelete: () => downloads.deleteWorkFiles(entry.key),
-                  ),
-              ],
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 32),
+        children: [
+          SwitchListTile(
+            title: Text(l('download.wifiOnly')),
+            subtitle: downloads.waitingForWifi
+                ? Text(l('download.waitingWifi'))
+                : null,
+            value: downloads.wifiOnly,
+            onChanged: downloads.setWifiOnly,
+          ),
+          if (rows.isEmpty && active.isEmpty && failed.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(l('download.empty')),
             ),
+          if (active.isNotEmpty) ...[
+            SectionHeader(
+              title: l('download.downloading'),
+              icon: Icons.downloading_rounded,
+              subtitle: Fmt.size(active.fold(0, (s, t) => s + t.received)),
+            ),
+            for (final task in active)
+              _TaskTile(
+                task: task,
+                onCancel: () => downloads.cancel(task),
+                onPause: () => downloads.pauseTask(task),
+              ),
+          ],
+          if (failed.isNotEmpty) ...[
+            SectionHeader(
+              title: l('download.failed'),
+              icon: Icons.error_outline_rounded,
+            ),
+            for (final task in failed)
+              _TaskTile(
+                task: task,
+                onCancel: () => downloads.retry(task),
+                retry: true,
+              ),
+          ],
+          if (byWork.isNotEmpty)
+            SectionHeader(
+              title: l('common.total', {'n': byWork.length}),
+              icon: Icons.offline_pin_rounded,
+              subtitle: Fmt.size(library.downloadBytes),
+            ),
+          for (final entry in byWork.entries)
+            _WorkDownloadGroup(
+              workId: entry.key,
+              rows: entry.value,
+              onPlay: (work) => _playWork(context, work),
+              onDelete: () => downloads.deleteWorkFiles(entry.key),
+            ),
+        ],
+      ),
     );
   }
 
@@ -131,11 +142,13 @@ class _TaskTile extends StatelessWidget {
     required this.task,
     required this.onCancel,
     this.retry = false,
+    this.onPause,
   });
 
   final DownloadTask task;
   final VoidCallback onCancel;
   final bool retry;
+  final VoidCallback? onPause;
 
   @override
   Widget build(BuildContext context) {
@@ -162,7 +175,9 @@ class _TaskTile extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             retry
-                ? (task.error ?? '')
+                ? (task.status == DownloadStatus.paused
+                      ? L10n.of(context)('download.paused')
+                      : task.error ?? '')
                 : '${Fmt.size(task.received)}'
                       '${task.total > 0 ? ' / ${Fmt.size(task.total)}' : ''}',
             maxLines: 1,
@@ -171,9 +186,20 @@ class _TaskTile extends StatelessWidget {
           ),
         ],
       ),
-      trailing: IconButton(
-        icon: Icon(retry ? Icons.refresh_rounded : Icons.close_rounded),
-        onPressed: onCancel,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (onPause != null)
+            IconButton(
+              onPressed: onPause,
+              tooltip: L10n.of(context)('download.pause'),
+              icon: const Icon(Icons.pause_rounded),
+            ),
+          IconButton(
+            icon: Icon(retry ? Icons.refresh_rounded : Icons.close_rounded),
+            onPressed: onCancel,
+          ),
+        ],
       ),
     );
   }

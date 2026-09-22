@@ -9,6 +9,7 @@ import '../models/track.dart';
 import '../models/user.dart';
 import '../models/work.dart';
 import '../storage/app_prefs.dart';
+import 'resumable_download.dart';
 
 /// 统一的 API 异常，携带可展示的文案。
 class ApiException implements Exception {
@@ -561,15 +562,11 @@ class ApiClient {
     void Function(int received, int total)? onProgress,
   }) async {
     try {
-      await _dio.download(
-        url,
-        savePath,
+      await ResumableDownload(_dio).download(
+        url: url,
+        savePath: savePath,
         cancelToken: cancelToken,
-        onReceiveProgress: onProgress,
-        options: Options(
-          headers: {'Referer': '$siteUrl/'},
-          responseType: ResponseType.stream,
-        ),
+        onProgress: onProgress,
       );
     } on DioException catch (e) {
       throw _mapDioError(e);

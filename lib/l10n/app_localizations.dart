@@ -56,6 +56,17 @@ class _L10nDelegate extends LocalizationsDelegate<L10n> {
 // =============================================================================
 
 const Map<String, String> _zh = {
+  "download.wifiOnly": "仅 Wi-Fi 下载",
+  "download.waitingWifi": "等待 Wi-Fi，已保留下载进度",
+  "download.paused": "已暂停",
+  "download.pause": "暂停下载",
+  "backup.title": "备份与恢复",
+  "backup.hint": "导出收藏、历史、播放列表、收听进度、书签和字幕。导入时合并现有资料，已有记录优先保留。不包含账号令牌和音频文件。",
+  "backup.export": "导出备份",
+  "backup.import": "导入并合并",
+  "backup.done": "操作完成",
+  "backup.failed": "操作失败，原有资料保留",
+  "backup.tooLarge": "文件超过 50 MB",
   'app.name': 'ASMR One',
   'app.tagline': '同人音声 · 在线收听',
 
@@ -277,6 +288,18 @@ const Map<String, String> _zh = {
 // =============================================================================
 
 const Map<String, String> _ja = {
+  "download.wifiOnly": "Wi-Fi のみでダウンロード",
+  "download.waitingWifi": "Wi-Fi 接続を待機中",
+  "download.paused": "一時停止中",
+  "download.pause": "ダウンロードを一時停止",
+  "backup.title": "バックアップと復元",
+  "backup.hint":
+      "お気に入り、履歴、リスト、再生位置、ブックマークと字幕を保存します。インポートは既存データを優先して統合します。認証情報と音声は含みません。",
+  "backup.export": "バックアップを保存",
+  "backup.import": "インポートして統合",
+  "backup.done": "完了",
+  "backup.failed": "失敗しました。既存データは保持されます",
+  "backup.tooLarge": "ファイルが 50 MB を超えています",
   'app.name': 'ASMR One',
   'app.tagline': '同人音声 · オンライン視聴',
 
@@ -498,6 +521,17 @@ const Map<String, String> _ja = {
 // =============================================================================
 
 const Map<String, String> _en = {
+  "download.wifiOnly": "Download over Wi-Fi only",
+  "download.waitingWifi": "Waiting for Wi-Fi; progress saved",
+  "download.paused": "Paused",
+  "download.pause": "Pause download",
+  "backup.title": "Backup and restore",
+  "backup.hint": "Export favorites, history, playlists, progress, bookmarks and subtitles. Import merges data and keeps existing entries. Account tokens and audio files are excluded.",
+  "backup.export": "Export backup",
+  "backup.import": "Import and merge",
+  "backup.done": "Completed",
+  "backup.failed": "Failed; existing data preserved",
+  "backup.tooLarge": "File exceeds 50 MB",
   'app.name': 'ASMR One',
   'app.tagline': 'Doujin ASMR · Stream Online',
 

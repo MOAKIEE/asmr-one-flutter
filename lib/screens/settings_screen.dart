@@ -12,6 +12,7 @@ import '../state/player_state.dart';
 import '../state/settings_state.dart';
 import '../widgets/common.dart';
 import 'login_screen.dart';
+import 'backup_screen.dart';
 
 /// 设置页。
 class SettingsScreen extends StatelessWidget {
@@ -166,6 +167,12 @@ class SettingsScreen extends StatelessWidget {
           ),
 
           // ---------------- 存储 ----------------
+          ListTile(
+            leading: const Icon(Icons.import_export),
+            title: Text(l('backup.title')),
+            onTap: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const BackupScreen())),
+          ),
           SectionHeader(
             title: l('settings.storage'),
             icon: Icons.sd_storage_outlined,

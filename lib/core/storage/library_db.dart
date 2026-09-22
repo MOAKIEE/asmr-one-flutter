@@ -14,12 +14,12 @@ class LibraryDb {
 
   final Database _db;
 
-  static const int _version = 2;
+  static const int _version = 3;
   static const String _name = 'asmr_one_library.db';
 
-  static Future<LibraryDb> open() async {
+  static Future<LibraryDb> open({String? path}) async {
     final dir = await getDatabasesPath();
-    final db = await _openAt(p.join(dir, _name));
+    final db = await _openAt(path ?? p.join(dir, _name));
     return LibraryDb._(db);
   }
 
@@ -36,10 +36,12 @@ class LibraryDb {
           "ALTER TABLE downloads ADD COLUMN folder_label TEXT NOT NULL DEFAULT ''",
         );
       }
+      if (old < 3) await _createDocuments(db);
     },
   );
 
   static Future<void> _createSchema(Database db, int version) async {
+    await _createDocuments(db);
     await db.execute('''
           CREATE TABLE favorites (
             work_id INTEGER PRIMARY KEY,
@@ -371,6 +373,134 @@ class LibraryDb {
   Future<void> clearProgress() => _db.delete('progress');
 
   Future<void> close() => _db.close();
+
+  static Future<void> _createDocuments(Database db) => db.execute(
+    'CREATE TABLE documents (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+  );
+
+  Future<Object?> readDocument(String key) async {
+    final rows = await _db.query(
+      'documents',
+      where: 'key = ?',
+      whereArgs: [key],
+    );
+    return rows.isEmpty ? null : jsonDecode(rows.first['value'] as String);
+  }
+
+  Future<void> writeDocument(String key, Object? value) async {
+    if (value == null) {
+      await _db.delete('documents', where: 'key = ?', whereArgs: [key]);
+    } else {
+      await _db.insert('documents', {
+        'key': key,
+        'value': jsonEncode(value),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+  }
+
+  static const _backupTables = [
+    'favorites',
+    'history',
+    'local_playlists',
+    'local_playlist_items',
+    'progress',
+  ];
+
+  Future<String> exportBackup() => _db.transaction((txn) async {
+    final tables = <String, Object?>{};
+    for (final table in _backupTables) {
+      tables[table] = await txn.query(table);
+    }
+    tables['documents'] = await txn.query(
+      'documents',
+      where: "key LIKE 'bookmarks:%' OR key LIKE 'subtitle:%'",
+    );
+    return jsonEncode({
+      'format': 'asmr-one-library',
+      'version': 1,
+      'tables': tables,
+    });
+  });
+
+  /// Merge portable user data atomically; never import tokens, paths or queues.
+  Future<void> importBackup(String source) async {
+    final root = jsonDecode(source);
+    if (root is! Map ||
+        root['format'] != 'asmr-one-library' ||
+        root['version'] != 1 ||
+        root['tables'] is! Map) {
+      throw const FormatException('不支持的备份格式');
+    }
+    final tables = root['tables'] as Map;
+    for (final table in [..._backupTables, 'documents']) {
+      if (tables[table] is! List ||
+          (tables[table] as List).any((r) => r is! Map)) {
+        throw const FormatException('备份数据不完整');
+      }
+    }
+    await _db.transaction((txn) async {
+      for (final table in ['favorites', 'history', 'progress']) {
+        for (final raw in tables[table] as List) {
+          final row = Map<String, Object?>.from(raw as Map);
+          if (table != 'progress') {
+            final data = jsonDecode(row['data'] as String);
+            if (data is! Map || data['id'] != row['work_id']) {
+              throw const FormatException('作品数据无效');
+            }
+          }
+          // Existing entries win, so importing an old backup cannot rewind progress.
+          await txn.insert(
+            table,
+            row,
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+        }
+      }
+      final ids = <int, int>{};
+      for (final raw in tables['local_playlists'] as List) {
+        final row = Map<String, Object?>.from(raw as Map);
+        final oldId = row.remove('id') as int;
+        final existing = await txn.query(
+          'local_playlists',
+          where: 'name = ? AND created_at = ?',
+          whereArgs: [row['name'], row['created_at']],
+        );
+        ids[oldId] = existing.isEmpty
+            ? await txn.insert('local_playlists', row)
+            : existing.first['id'] as int;
+      }
+      for (final raw in tables['local_playlist_items'] as List) {
+        final row = Map<String, Object?>.from(raw as Map);
+        final id = ids[row['playlist_id']];
+        if (id == null) throw const FormatException('播放列表引用无效');
+        row['playlist_id'] = id;
+        final data = jsonDecode(row['data'] as String);
+        if ((data as Map)['id'] != row['work_id']) {
+          throw const FormatException('作品数据无效');
+        }
+        await txn.insert(
+          'local_playlist_items',
+          row,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+      for (final raw in tables['documents'] as List) {
+        final row = Map<String, Object?>.from(raw as Map);
+        final key = row['key'] as String;
+        if (!key.startsWith('bookmarks:') && !key.startsWith('subtitle:')) {
+          throw const FormatException('备份包含不支持的数据');
+        }
+        jsonDecode(row['value'] as String);
+        await txn.insert(
+          'documents',
+          row,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+    });
+  }
+
+  Future<void> clearDocuments() => _db.delete('documents');
 
   // ---------------------------------------------------------------------------
 

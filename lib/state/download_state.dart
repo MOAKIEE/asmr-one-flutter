@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -13,7 +14,7 @@ import '../core/storage/library_db.dart';
 import '../core/utils/formatters.dart';
 import 'library_state.dart';
 
-enum DownloadStatus { queued, running, done, failed, cancelled }
+enum DownloadStatus { queued, running, paused, done, failed, cancelled }
 
 typedef DownloadFile = Future<void> Function({
   required String url,
@@ -63,6 +64,8 @@ class DownloadState extends ChangeNotifier {
     this._library, {
     DownloadFile? downloadFile,
     Future<Directory> Function(int)? workDirectory,
+    this.readQueue,
+    this.writeQueue,
   }) : _downloadFile = downloadFile ?? ApiClient.instance.downloadRaw,
        _workDirectory = workDirectory ?? _workDir;
 
@@ -70,6 +73,146 @@ class DownloadState extends ChangeNotifier {
   final ApiClient _api = ApiClient.instance;
   final DownloadFile _downloadFile;
   final Future<Directory> Function(int) _workDirectory;
+  final Future<Object?> Function()? readQueue;
+  final Future<void> Function(Object?)? writeQueue;
+  StreamSubscription<List<ConnectivityResult>>? _networkSubscription;
+  bool _wifiOnly = false;
+  bool _networkAllowed = true;
+  bool _disposed = false;
+  bool get wifiOnly => _wifiOnly;
+  bool get waitingForWifi => _wifiOnly && !_networkAllowed;
+  Future<void> _persistQueue() async {
+    await writeQueue?.call({
+      'wifiOnly': _wifiOnly,
+      'tasks': [
+        for (final t in tasks.where(
+          (t) =>
+              t.status != DownloadStatus.done &&
+              t.status != DownloadStatus.cancelled,
+        ))
+          {
+            'workId': t.workId,
+            'workTitle': t.workTitle,
+            'hash': t.hash,
+            'title': t.title,
+            'url': _withoutToken(t.url),
+            'duration': t.duration,
+            'trackIndex': t.trackIndex,
+            'folderLabel': t.folderLabel,
+            'status': t.status.name,
+          },
+      ],
+    });
+  }
+
+  static String _withoutToken(String url) {
+    final uri = Uri.parse(url);
+    return uri
+        .replace(queryParameters: {...uri.queryParameters}..remove('token'))
+        .toString();
+  }
+
+  String _downloadUrl(DownloadTask task) {
+    final uri = Uri.parse(task.url);
+    if (ApiClient.baseUrls.any((base) => Uri.parse(base).host == uri.host) &&
+        uri.path.startsWith('/api/media/')) {
+      return uri
+          .replace(
+            queryParameters: {
+              ...uri.queryParameters,
+              'token': _api.token ?? '',
+            },
+          )
+          .toString();
+    }
+    return task.url;
+  }
+
+  Future<void> initialize() async {
+    final saved = await readQueue?.call();
+    if (saved is Map) {
+      _wifiOnly = saved['wifiOnly'] == true;
+      for (final raw in (saved['tasks'] as List? ?? [])) {
+        final m = raw as Map;
+        final task = DownloadTask(
+          workId: m['workId'] as int,
+          workTitle: m['workTitle'] as String,
+          hash: m['hash'] as String,
+          title: m['title'] as String,
+          url: m['url'] as String,
+          duration: (m['duration'] as num).toDouble(),
+          trackIndex: m['trackIndex'] as int,
+          folderLabel: m['folderLabel'] as String,
+        );
+        task.status = m['status'] == 'paused'
+            ? DownloadStatus.paused
+            : m['status'] == 'failed'
+            ? DownloadStatus.failed
+            : DownloadStatus.queued;
+        if (!(await _library.downloadedPaths(task.workId))
+            .containsKey(task.hash)) {
+          _tasks[task.hash] = task;
+        }
+      }
+    }
+    final connectivity = Connectivity();
+    _networkAllowed =
+        !_wifiOnly ||
+        (await connectivity.checkConnectivity()).contains(
+          ConnectivityResult.wifi,
+        );
+    _networkSubscription = connectivity.onConnectivityChanged.listen((result) {
+      _networkAllowed = !_wifiOnly || result.contains(ConnectivityResult.wifi);
+      if (!_networkAllowed && _current != null) {
+        _current!.status = DownloadStatus.queued;
+        _cancelToken?.cancel('wifi');
+      } else if (_networkAllowed) {
+        unawaited(_pump());
+      }
+      notifyListeners();
+    });
+    notifyListeners();
+    unawaited(_pump());
+  }
+
+  Future<void> setWifiOnly(bool value) async {
+    _wifiOnly = value;
+    _networkAllowed =
+        !value ||
+        (await Connectivity().checkConnectivity()).contains(
+          ConnectivityResult.wifi,
+        );
+    if (!_networkAllowed && _current != null) {
+      _current!.status = DownloadStatus.queued;
+      _cancelToken?.cancel('wifi');
+    }
+    await _persistQueue();
+    notifyListeners();
+    if (_networkAllowed) unawaited(_pump());
+  }
+
+  Future<void> pauseTask(DownloadTask task) async {
+    if (!task.isActive) return;
+    task.status = DownloadStatus.paused;
+    if (identical(task, _current)) _cancelToken?.cancel('pause');
+    await _persistQueue();
+    notifyListeners();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _networkSubscription?.cancel();
+    if (_current != null) _current!.status = DownloadStatus.paused;
+    _cancelToken?.cancel('dispose');
+    super.dispose();
+  }
+
   final Set<int> _deletingWorks = {};
   bool _clearing = false;
   Completer<void>? _currentFinished;
@@ -94,9 +237,9 @@ class DownloadState extends ChangeNotifier {
     _tasks.removeWhere(
       (_, t) =>
           t.status == DownloadStatus.done ||
-          t.status == DownloadStatus.failed ||
           t.status == DownloadStatus.cancelled,
     );
+    unawaited(_persistQueue());
     notifyListeners();
   }
 
@@ -129,7 +272,8 @@ class DownloadState extends ChangeNotifier {
         skipped++;
         continue;
       }
-      if (_tasks.containsKey(hash)) {
+      if (_tasks.containsKey(hash) &&
+          _tasks[hash]!.status != DownloadStatus.cancelled) {
         skipped++;
         continue;
       }
@@ -146,16 +290,18 @@ class DownloadState extends ChangeNotifier {
       queued++;
     }
 
+    await _persistQueue();
     notifyListeners();
     if (queued > 0) unawaited(_pump());
     return (queued: queued, skipped: skipped);
   }
 
   Future<void> _pump() async {
-    if (_running) return;
+    if (_running || !_networkAllowed || _disposed || _clearing) return;
     _running = true;
     try {
       while (true) {
+        if (!_networkAllowed || _disposed || _clearing) break;
         DownloadTask? next;
         for (final t in _tasks.values) {
           if (t.status == DownloadStatus.queued) {
@@ -168,6 +314,7 @@ class DownloadState extends ChangeNotifier {
         _currentFinished = finished;
         try {
           await _downloadOne(next);
+          await _persistQueue();
         } finally {
           _current = null;
           _currentFinished = null;
@@ -199,7 +346,7 @@ class DownloadState extends ChangeNotifier {
         await file.delete();
       }
       await _downloadFile(
-        url: task.url,
+        url: _downloadUrl(task),
         savePath: file.path,
         cancelToken: token,
         onProgress: (received, total) {
@@ -231,7 +378,10 @@ class DownloadState extends ChangeNotifier {
       );
     } catch (e) {
       if (token.isCancelled) {
-        task.status = DownloadStatus.cancelled;
+        if (task.status != DownloadStatus.paused &&
+            task.status != DownloadStatus.queued) {
+          task.status = DownloadStatus.cancelled;
+        }
       } else {
         task
           ..status = DownloadStatus.failed
@@ -239,6 +389,12 @@ class DownloadState extends ChangeNotifier {
       }
       try {
         if (file != null && await file.exists()) await file.delete();
+        if (file != null && task.status == DownloadStatus.cancelled) {
+          for (final suffix in ['.part', '.validator']) {
+            final partial = File('${file.path}$suffix');
+            if (await partial.exists()) await partial.delete();
+          }
+        }
       } catch (_) {}
     } finally {
       _cancelToken = null;
@@ -253,9 +409,17 @@ class DownloadState extends ChangeNotifier {
   }
 
   void cancel(DownloadTask task) {
-    if (!task.isActive) return;
+    if (!task.isActive &&
+        task.status != DownloadStatus.paused &&
+        task.status != DownloadStatus.failed)
+      return;
     task.status = DownloadStatus.cancelled;
-    if (identical(task, _current)) _cancelToken?.cancel('user');
+    if (identical(task, _current)) {
+      _cancelToken?.cancel('user');
+    } else {
+      unawaited(_deletePartial(task));
+    }
+    unawaited(_persistQueue());
     notifyListeners();
   }
 
@@ -270,6 +434,7 @@ class DownloadState extends ChangeNotifier {
       ..error = null
       ..progress = 0
       ..received = 0;
+    unawaited(_persistQueue());
     notifyListeners();
     unawaited(_pump());
   }
@@ -283,10 +448,14 @@ class DownloadState extends ChangeNotifier {
         cancel(task);
       }
       if (finished != null) await finished;
+      for (final task in tasks) {
+        await _deletePartial(task);
+      }
       for (final row in [..._library.downloads]) {
         await deleteFile(row);
       }
       _tasks.clear();
+      await _persistQueue();
     } finally {
       _clearing = false;
       notifyListeners();
@@ -305,6 +474,9 @@ class DownloadState extends ChangeNotifier {
       }
       // 下载可能已进入落库阶段，必须等它完成后再查询并删除记录。
       if (finished != null) await finished;
+      for (final task in tasksOf(workId)) {
+        await _deletePartial(task);
+      }
       final rows = await _library.downloadsFor(workId);
       for (final row in rows) {
         try {
@@ -316,6 +488,7 @@ class DownloadState extends ChangeNotifier {
       }
       await _library.deleteDownloadsOfWork(workId);
       _tasks.removeWhere((_, t) => t.workId == workId);
+      await _persistQueue();
     } finally {
       _deletingWorks.remove(workId);
     }
@@ -337,6 +510,16 @@ class DownloadState extends ChangeNotifier {
     final dir = Directory(p.join(base.path, 'asmr_downloads', '$workId'));
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
+  }
+
+  Future<void> _deletePartial(DownloadTask task) async {
+    final dir = await _workDirectory(task.workId);
+    final name =
+        '${task.hash.replaceAll('/', '_')}_${_safeFileName(task.title)}';
+    for (final suffix in ['.part', '.validator']) {
+      final file = File(p.join(dir.path, '$name$suffix'));
+      if (await file.exists()) await file.delete();
+    }
   }
 
   static String _safeFileName(String name) {

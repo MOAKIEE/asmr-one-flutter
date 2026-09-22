@@ -11,6 +11,15 @@ class LibraryState extends ChangeNotifier {
 
   final LibraryDb _db;
 
+  Future<Object?> readDocument(String key) => _db.readDocument(key);
+  Future<void> writeDocument(String key, Object? value) =>
+      _serial(() => _db.writeDocument(key, value));
+  Future<String> exportBackup() => _serial(_db.exportBackup);
+  Future<void> importBackup(String source) async {
+    await _serial(() => _db.importBackup(source));
+    await refresh();
+  }
+
   Future<void> _lock = Future.value();
 
   List<Work> _favorites = const [];
@@ -197,6 +206,7 @@ class LibraryState extends ChangeNotifier {
       await _db.deleteLocalPlaylist(p.id);
     }
     await _db.clearProgress();
+    await _db.clearDocuments();
     _favorites = const [];
     _favoriteIds = {};
     _history = const [];
