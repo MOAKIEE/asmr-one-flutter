@@ -299,10 +299,12 @@ class _BottomActions extends StatelessWidget {
         ),
         _PillButton(
           icon: Icons.bedtime_outlined,
-          label: player.sleepDeadline == null
+          label: player.stopAfterTrack
+              ? l('player.stopAfterTrack')
+              : player.sleepDeadline == null
               ? l('player.sleep')
               : '${player.sleepRemaining.inMinutes}m',
-          active: player.sleepDeadline != null,
+          active: player.sleepDeadline != null || player.stopAfterTrack,
           onTap: () => _showSleepSheet(context, player),
         ),
         _PillButton(
@@ -376,6 +378,18 @@ class _BottomActions extends StatelessWidget {
                 player.clearSleepTimer();
                 Navigator.of(sheetContext).pop();
               },
+            ),
+            ListTile(
+              leading: const Icon(Icons.music_off),
+              title: Text(l('player.stopAfterTrack')),
+              onTap: () {
+                player.setStopAfterTrack(true);
+                Navigator.of(sheetContext).pop();
+              },
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(l('player.fadeHint')),
             ),
             for (final m in const [15, 30, 45, 60, 90])
               ListTile(

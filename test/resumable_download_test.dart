@@ -19,8 +19,9 @@ void main() {
           expect(req.headers.value('if-range'), 'v1');
           req.response.headers.set('etag', 'v1');
           req.response.statusCode = supportsRange ? 206 : 200;
-          if (supportsRange)
+          if (supportsRange) {
             req.response.headers.set('content-range', 'bytes 3-5/6');
+          }
           req.response.write(supportsRange ? 'def' : 'abcdef');
           await req.response.close();
         });

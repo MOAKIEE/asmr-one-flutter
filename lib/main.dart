@@ -106,7 +106,12 @@ class _BootstrapAppState extends State<BootstrapApp> {
     _settings = SettingsState(widget.prefs);
     _auth = AuthState(widget.prefs);
     _library = LibraryState(widget.db);
-    _player = PlayerState(settings: _settings, library: _library);
+    _player = PlayerState(
+      settings: _settings,
+      library: _library,
+      readSession: () => _library.readDocument('playerSession'),
+      writeSession: (value) => _library.writeDocument('playerSession', value),
+    );
     _downloads = DownloadState(
       _library,
       readQueue: () => _library.readDocument('downloadQueue'),
@@ -117,6 +122,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
 
   Future<void> _bootstrap() async {
     await _library.refresh();
+    await _player.restoreSession();
     await _downloads.initialize();
     // 校验本地令牌；网络异常时保持离线可用。
     await _auth.bootstrap();

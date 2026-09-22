@@ -2,6 +2,7 @@
 // ignore_for_file: prefer_initializing_formals
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui' show Size;
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -53,7 +54,11 @@ class PlayerState extends ChangeNotifier {
     required SettingsState settings,
     required LibraryState library,
     ja.AudioPlayer? audioPlayer,
+    this.readSession,
+    this.writeSession,
+    DateTime Function()? now,
   }) : _settings = settings,
+       _now = now ?? DateTime.now,
        _library = library,
        _player = audioPlayer ?? ja.AudioPlayer() {
     _autoPlayNext = settings.autoPlayNext;
@@ -67,6 +72,177 @@ class PlayerState extends ChangeNotifier {
   final ApiClient _api = ApiClient.instance;
 
   final ja.AudioPlayer _player;
+  final DateTime Function() _now;
+  final Future<Object?> Function()? readSession;
+  final Future<void> Function(Object?)? writeSession;
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  bool _disposed = false;
+  bool _restoring = false;
+  int _loadVersion = 0;
+  bool _stopAfterTrack = false;
+  bool get stopAfterTrack => _stopAfterTrack;
+  bool _fadeSleep = true;
+  double? _sleepVolume;
+  Duration? _loopStart;
+  Duration? _loopEnd;
+  bool _loopSeeking = false;
+  Duration? get loopStart => _loopStart;
+  Duration? get loopEnd => _loopEnd;
+
+  Future<void> _persistSession() async {
+    if (_restoring || writeSession == null) return;
+    if (_queue.isEmpty) {
+      await writeSession!(null);
+      return;
+    }
+    await writeSession!({
+      'index': _currentIndex,
+      'position': _player.position.inMilliseconds,
+      'shuffle': _player.shuffleModeEnabled,
+      'loop': _loopMode.index,
+      'items': [
+        for (final item in _queue)
+          {
+            'workId': item.workId,
+            'workTitle': item.workTitle,
+            'title': item.title,
+            'hash': item.hash,
+            'url': _cleanUrl(item.url),
+            'coverUrl': item.coverUrl,
+            'circleName': item.circleName,
+            'folderLabel': item.folderLabel,
+            'duration': item.duration?.inMilliseconds,
+            'localPath': item.localPath,
+          },
+      ],
+    });
+  }
+
+  static String _cleanUrl(String url) {
+    final uri = Uri.tryParse(url);
+    return uri == null
+        ? ''
+        : uri
+              .replace(
+                queryParameters: {...uri.queryParameters}..remove('token'),
+              )
+              .toString();
+  }
+
+  Future<void> restoreSession() async {
+    if (readSession == null || hasQueue) return;
+    final version = _loadVersion;
+    final saved = await readSession!();
+    if (saved is! Map ||
+        saved['items'] is! List ||
+        hasQueue ||
+        version != _loadVersion) {
+      return;
+    }
+    _restoring = true;
+    try {
+      final items = <PlayItem>[];
+      var index = 0;
+      var selectedExists = false;
+      final savedIndex = saved['index'] as int? ?? 0;
+      var sourceIndex = 0;
+      for (final raw in saved['items'] as List) {
+        final m = raw as Map;
+        final local = m['localPath'] as String?;
+        final originalIndex = sourceIndex++;
+        if (local != null && !await File(local).exists()) continue;
+        var url = m['url'] as String? ?? '';
+        final uri = Uri.tryParse(url);
+        if (uri != null &&
+            ApiClient.baseUrls.any(
+              (base) => Uri.parse(base).host == uri.host,
+            ) &&
+            uri.path.startsWith('/api/media/')) {
+          url = uri
+              .replace(
+                queryParameters: {
+                  ...uri.queryParameters,
+                  'token': _api.token ?? '',
+                },
+              )
+              .toString();
+        }
+        if (originalIndex < savedIndex) index++;
+        if (originalIndex == savedIndex) selectedExists = true;
+        items.add(
+          PlayItem(
+            workId: m['workId'] as int,
+            workTitle: m['workTitle'] as String,
+            title: m['title'] as String,
+            url: url,
+            coverUrl: m['coverUrl'] as String,
+            hash: m['hash'] as String?,
+            circleName: m['circleName'] as String? ?? '',
+            folderLabel: m['folderLabel'] as String? ?? '',
+            localPath: local,
+            duration: m['duration'] == null
+                ? null
+                : Duration(milliseconds: m['duration'] as int),
+          ),
+        );
+      }
+      if (items.isEmpty || hasQueue || version != _loadVersion) return;
+      _loopMode = ja.LoopMode.values[(saved['loop'] as int? ?? 0).clamp(0, 2)];
+      index = index.clamp(0, items.length - 1);
+      final item = items[index];
+      _work = Work.fromJson({
+        'id': item.workId,
+        'title': item.workTitle,
+        'name': item.circleName,
+      });
+      await _load(
+        items,
+        index: index,
+        shuffle: saved['shuffle'] == true,
+        initialPosition: Duration(
+          milliseconds: selectedExists
+              ? (saved['position'] as int? ?? 0).clamp(0, 1 << 40)
+              : 0,
+        ),
+      );
+      // Restoring a session never starts playback without user interaction.
+    } catch (e) {
+      _error = '恢复播放队列失败：$e';
+    } finally {
+      _restoring = false;
+      notifyListeners();
+    }
+  }
+
+  void markLoopStart() {
+    _loopStart = _player.position;
+    _loopEnd = null;
+    notifyListeners();
+  }
+
+  bool markLoopEnd() {
+    if (_loopStart == null ||
+        _player.position <= _loopStart! + const Duration(milliseconds: 500)) {
+      return false;
+    }
+    _loopEnd = _player.position;
+    notifyListeners();
+    return true;
+  }
+
+  void clearAbLoop() {
+    _loopStart = null;
+    _loopEnd = null;
+    notifyListeners();
+  }
+
+  Future<void> setStopAfterTrack(bool enabled) async {
+    clearSleepTimer();
+    _stopAfterTrack = enabled;
+    if (hasQueue) await _reloadPlaybackMode();
+    notifyListeners();
+  }
+
   late bool _autoPlayNext;
   bool _singleSource = false;
   bool _changingSources = false;
@@ -105,7 +281,7 @@ class PlayerState extends ChangeNotifier {
   Duration get sleepRemaining {
     final d = _sleepDeadline;
     if (d == null) return Duration.zero;
-    final left = d.difference(DateTime.now());
+    final left = d.difference(_now());
     return left.isNegative ? Duration.zero : left;
   }
 
@@ -114,29 +290,48 @@ class PlayerState extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   void _bind() {
-    _player.currentIndexStream.listen((index) {
-      if (index == null || _singleSource || _changingSources) return;
-      _currentIndex = index;
-      _onItemChanged();
-    });
-    _player.playerStateStream.listen((state) {
-      if (!_changingSources &&
-          state.processingState == ja.ProcessingState.completed) {
-        if (!_settings.autoPlayNext) {
-          _player.pause();
-          _player.seek(Duration.zero, index: 0);
-        } else if (_player.loopMode == ja.LoopMode.off && !hasNext) {
-          // 队列播完，回到开头并暂停。
-          _player.pause();
-          _player.seek(Duration.zero, index: 0);
+    _subscriptions.add(
+      _player.currentIndexStream.listen((index) {
+        if (index == null || _singleSource || _changingSources) return;
+        _currentIndex = index;
+        clearAbLoop();
+        _onItemChanged();
+      }),
+    );
+    _subscriptions.add(
+      _player.playerStateStream.listen((state) {
+        if (!_changingSources &&
+            state.processingState == ja.ProcessingState.completed) {
+          if (!_settings.autoPlayNext || _stopAfterTrack) {
+            _player.pause();
+            _player.seek(Duration.zero, index: 0);
+          } else if (_player.loopMode == ja.LoopMode.off && !hasNext) {
+            // 队列播完，回到开头并暂停。
+            _player.pause();
+            _player.seek(Duration.zero, index: 0);
+          }
         }
-      }
-      notifyListeners();
-    });
-    _player.errorStream.listen((e) {
-      _error = '播放失败：${e.message ?? e.code}';
-      notifyListeners();
-    });
+        notifyListeners();
+      }),
+    );
+    _subscriptions.add(
+      _player.errorStream.listen((e) {
+        _error = '播放失败：${e.message ?? e.code}';
+        notifyListeners();
+      }),
+    );
+    _subscriptions.add(
+      _player.positionStream.listen((position) {
+        if (_loopStart != null &&
+            _loopEnd != null &&
+            position >= _loopEnd! &&
+            !_loopSeeking &&
+            playing) {
+          _loopSeeking = true;
+          _player.seek(_loopStart!).whenComplete(() => _loopSeeking = false);
+        }
+      }),
+    );
     // 每 5 秒保存一次收听进度，用于「继续播放」。
     _progressTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (_player.playing) _saveProgress();
@@ -174,11 +369,11 @@ class PlayerState extends ChangeNotifier {
     Duration position,
   ) async {
     _changingSources = true;
-    _singleSource = !_settings.autoPlayNext;
+    _singleSource = !_settings.autoPlayNext || _stopAfterTrack;
     _currentIndex = index;
     try {
       await _player.setLoopMode(
-        _singleSource && _loopMode == ja.LoopMode.all
+        _stopAfterTrack || (_singleSource && _loopMode == ja.LoopMode.all)
             ? ja.LoopMode.off
             : _loopMode,
       );
@@ -194,6 +389,7 @@ class PlayerState extends ChangeNotifier {
   }
 
   void _saveProgress() {
+    unawaited(_persistSession());
     final item = currentItem;
     if (item == null) return;
     final hash = item.hash;
@@ -397,7 +593,10 @@ class PlayerState extends ChangeNotifier {
     List<PlayItem> items, {
     int index = 0,
     bool shuffle = false,
+    Duration? initialPosition,
   }) async {
+    final version = ++_loadVersion;
+    clearAbLoop();
     _saveProgress();
     _error = null;
     _queue = items;
@@ -410,9 +609,12 @@ class PlayerState extends ChangeNotifier {
           ? 0
           : await _library.progressFor(item.hash!);
       final duration = item.duration?.inMilliseconds;
-      final resume = saved > 0 && (duration == null || saved < duration - 3000)
-          ? Duration(milliseconds: saved)
-          : Duration.zero;
+      final resume =
+          initialPosition ??
+          (saved > 0 && (duration == null || saved < duration - 3000)
+              ? Duration(milliseconds: saved)
+              : Duration.zero);
+      if (version != _loadVersion) return false;
       await _setSources(items, index, resume);
       if (resume > Duration.zero &&
           _player.duration != null &&
@@ -422,6 +624,7 @@ class PlayerState extends ChangeNotifier {
       await _player.setSpeed(_settings.playbackSpeed);
       await _player.setShuffleModeEnabled(shuffle);
       if (shuffle) await _player.shuffle();
+      await _persistSession();
       return true;
     } catch (e) {
       _error = '加载音频失败：$e';
@@ -527,6 +730,10 @@ class PlayerState extends ChangeNotifier {
     _queue = const [];
     _currentIndex = -1;
     _work = null;
+    clearSleepTimer();
+    _stopAfterTrack = false;
+    clearAbLoop();
+    await _persistSession();
     notifyListeners();
   }
 
@@ -558,21 +765,36 @@ class PlayerState extends ChangeNotifier {
   // 定时关闭
   // ---------------------------------------------------------------------------
 
-  void setSleepTimer(int minutes) {
+  void setSleepTimer(int minutes, {bool fade = true}) {
     _sleepTimer?.cancel();
     _sleepTimer = null;
     _sleepDeadline = null;
+    _fadeSleep = fade;
+    final previousVolume = _sleepVolume;
+    if (previousVolume != null) unawaited(_player.setVolume(previousVolume));
+    _sleepVolume = null;
+    if (_stopAfterTrack) {
+      _stopAfterTrack = false;
+      if (hasQueue) unawaited(_reloadPlaybackMode());
+    }
     _settings.sleepMinutes = minutes;
     if (minutes <= 0) {
       notifyListeners();
       return;
     }
-    _sleepDeadline = DateTime.now().add(Duration(minutes: minutes));
-    _sleepTimer = Timer(Duration(minutes: minutes), () async {
-      await pause();
-      _sleepDeadline = null;
-      _sleepTimer = null;
-      _settings.sleepMinutes = 0;
+    _sleepDeadline = _now().add(Duration(minutes: minutes));
+    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+      final remaining = sleepRemaining;
+      if (remaining == Duration.zero) {
+        _sleepTimer?.cancel();
+        await pause();
+        clearSleepTimer();
+      } else if (_fadeSleep && remaining <= const Duration(seconds: 30)) {
+        _sleepVolume ??= _player.volume;
+        await _player.setVolume(
+          _sleepVolume! * remaining.inMilliseconds / 30000,
+        );
+      }
       notifyListeners();
     });
     notifyListeners();
@@ -632,7 +854,16 @@ class PlayerState extends ChangeNotifier {
   }
 
   @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
   void dispose() {
+    _disposed = true;
+    for (final subscription in _subscriptions) {
+      subscription.cancel();
+    }
     _settings.removeListener(_settingsChanged);
     _sleepTimer?.cancel();
     _progressTimer?.cancel();

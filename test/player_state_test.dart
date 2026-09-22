@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:asmr_one/core/models/work.dart';
 import 'package:asmr_one/core/storage/app_prefs.dart';
@@ -31,6 +32,18 @@ class TestAudio implements AudioPlayer {
   bool failLoading = false;
   int playCalls = 0;
   final events = StreamController<PlayerState>.broadcast();
+  final positions = StreamController<Duration>.broadcast();
+  @override
+  bool shuffleModeEnabled = false;
+  @override
+  double volume = 1;
+  @override
+  double speed = 1;
+  @override
+  Future<void> setVolume(double value) async {
+    volume = value;
+  }
+
   List<AudioSource> sources = [];
   int? index;
   @override
@@ -43,6 +56,8 @@ class TestAudio implements AudioPlayer {
   LoopMode loopMode = LoopMode.off;
   @override
   Stream<int?> get currentIndexStream => const Stream.empty();
+  @override
+  Stream<Duration> get positionStream => positions.stream;
   @override
   Stream<PlayerException> get errorStream => const Stream.empty();
   @override
@@ -63,9 +78,17 @@ class TestAudio implements AudioPlayer {
   }
 
   @override
-  Future<void> setSpeed(double speed) async {}
+  Future<void> setSpeed(double speed) async {
+    this.speed = speed;
+  }
+
   @override
-  Future<void> setShuffleModeEnabled(bool enabled) async {}
+  Future<void> setShuffleModeEnabled(bool enabled) async {
+    shuffleModeEnabled = enabled;
+  }
+
+  @override
+  Future<void> shuffle() async {}
   @override
   Future<void> setLoopMode(LoopMode mode) async {
     loopMode = mode;
@@ -96,6 +119,7 @@ class TestAudio implements AudioPlayer {
   @override
   Future<void> dispose() async {
     await events.close();
+    await positions.close();
   }
 
   @override
@@ -104,6 +128,93 @@ class TestAudio implements AudioPlayer {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'session restores the selected track and position without autoplay',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = SettingsState(await AppPrefs.load());
+      final dir = await Directory.systemTemp.createTemp('asmr-session-');
+      final file = await File('${dir.path}/track.mp3').writeAsString('audio');
+      Object? session;
+      final audio = TestAudio();
+      final player = app.PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: audio,
+        writeSession: (value) async {
+          session = value;
+        },
+      );
+      await player.playLocalFiles(Work.fromJson({'id': 3, 'title': 'Saved'}), {
+        'a': file.path,
+      });
+      audio.position = const Duration(seconds: 23);
+      await player.pause();
+      player.dispose();
+      final restoredAudio = TestAudio();
+      final restored = app.PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: restoredAudio,
+        readSession: () async => session,
+      );
+      await restored.restoreSession();
+      expect(restored.currentItem!.workId, 3);
+      expect(restoredAudio.position, const Duration(seconds: 23));
+      expect(restoredAudio.playCalls, 0);
+      restored.dispose();
+      settings.dispose();
+      await dir.delete(recursive: true);
+    },
+  );
+  test('A-B loop seeks at B and rejects invalid end points', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsState(await AppPrefs.load());
+    final audio = TestAudio()..playing = true;
+    final player = app.PlayerState(
+      settings: settings,
+      library: TestLibrary(),
+      audioPlayer: audio,
+    );
+    audio.position = const Duration(seconds: 4);
+    player.markLoopStart();
+    expect(player.markLoopEnd(), isFalse);
+    audio.position = const Duration(seconds: 8);
+    expect(player.markLoopEnd(), isTrue);
+    audio.positions.add(const Duration(seconds: 9));
+    await Future<void>.delayed(Duration.zero);
+    expect(audio.position, const Duration(seconds: 4));
+    player.clearAbLoop();
+    expect(player.loopEnd, isNull);
+    player.dispose();
+    settings.dispose();
+  });
+  testWidgets(
+    'sleep timer fades during final 30 seconds and restores volume after pause',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = SettingsState(await AppPrefs.load());
+      final audio = TestAudio()..playing = true;
+      var now = DateTime(2026);
+      final player = app.PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: audio,
+        now: () => now,
+      );
+      player.setSleepTimer(1);
+      now = now.add(const Duration(seconds: 45));
+      await tester.pump(const Duration(seconds: 1));
+      expect(audio.volume, closeTo(0.5, 0.01));
+      now = now.add(const Duration(seconds: 15));
+      await tester.pump(const Duration(seconds: 1));
+      expect(audio.playing, isFalse);
+      expect(player.sleepDeadline, isNull);
+      expect(audio.volume, 1);
+      player.dispose();
+      settings.dispose();
+    },
+  );
   test(
     'failed source loading does not report success or start playback',
     () async {

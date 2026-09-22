@@ -56,6 +56,8 @@ class _L10nDelegate extends LocalizationsDelegate<L10n> {
 // =============================================================================
 
 const Map<String, String> _zh = {
+  "player.stopAfterTrack": "播完本曲停止",
+  "player.fadeHint": "定时关闭前 30 秒逐渐降低音量",
   "download.wifiOnly": "仅 Wi-Fi 下载",
   "download.waitingWifi": "等待 Wi-Fi，已保留下载进度",
   "download.paused": "已暂停",
@@ -288,6 +290,8 @@ const Map<String, String> _zh = {
 // =============================================================================
 
 const Map<String, String> _ja = {
+  "player.stopAfterTrack": "この曲の終了後に停止",
+  "player.fadeHint": "終了前の 30 秒間で音量を徐々に下げます",
   "download.wifiOnly": "Wi-Fi のみでダウンロード",
   "download.waitingWifi": "Wi-Fi 接続を待機中",
   "download.paused": "一時停止中",
@@ -521,6 +525,8 @@ const Map<String, String> _ja = {
 // =============================================================================
 
 const Map<String, String> _en = {
+  "player.stopAfterTrack": "Stop after this track",
+  "player.fadeHint": "Volume fades during the last 30 seconds",
   "download.wifiOnly": "Download over Wi-Fi only",
   "download.waitingWifi": "Waiting for Wi-Fi; progress saved",
   "download.paused": "Paused",

@@ -411,8 +411,9 @@ class DownloadState extends ChangeNotifier {
   void cancel(DownloadTask task) {
     if (!task.isActive &&
         task.status != DownloadStatus.paused &&
-        task.status != DownloadStatus.failed)
+        task.status != DownloadStatus.failed) {
       return;
+    }
     task.status = DownloadStatus.cancelled;
     if (identical(task, _current)) {
       _cancelToken?.cancel('user');
