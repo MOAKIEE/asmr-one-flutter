@@ -65,7 +65,10 @@ class DownloadsScreen extends StatelessWidget {
                     ),
                   ),
                   for (final task in active)
-                    _TaskTile(task: task, onCancel: downloads.cancelCurrent),
+                    _TaskTile(
+                      task: task,
+                      onCancel: () => downloads.cancel(task),
+                    ),
                 ],
                 if (failed.isNotEmpty) ...[
                   SectionHeader(
@@ -193,7 +196,12 @@ class _WorkDownloadGroup extends StatelessWidget {
     final l = L10n.of(context);
     final library = context.watch<LibraryState>();
     // 从收藏 / 历史里找到对应作品补全展示信息。
-    final work = _findWork(library, workId);
+    final work =
+        _findWork(library, workId) ??
+        Work.fromJson({
+          'id': workId,
+          'title': rows.first.workTitle ?? l('detail.title'),
+        });
     final size = rows.fold<int>(0, (s, r) => s + r.size);
 
     return Padding(
@@ -209,7 +217,7 @@ class _WorkDownloadGroup extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      rows.first.workTitle ?? work?.title ?? l('detail.title'),
+                      rows.first.workTitle ?? work.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodyMedium
@@ -231,12 +239,11 @@ class _WorkDownloadGroup extends StatelessWidget {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  if (work != null)
-                    FilledButton.tonalIcon(
-                      onPressed: () => onPlay(work),
-                      icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                      label: Text(l('action.play')),
-                    ),
+                  FilledButton.tonalIcon(
+                    onPressed: () => onPlay(work),
+                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                    label: Text(l('action.play')),
+                  ),
                   const Spacer(),
                   TextButton.icon(
                     onPressed: () => _confirmDelete(context),

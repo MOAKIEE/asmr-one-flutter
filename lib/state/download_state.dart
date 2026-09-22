@@ -15,6 +15,13 @@ import 'library_state.dart';
 
 enum DownloadStatus { queued, running, done, failed, cancelled }
 
+typedef DownloadFile = Future<void> Function({
+  required String url,
+  required String savePath,
+  CancelToken? cancelToken,
+  void Function(int received, int total)? onProgress,
+});
+
 /// 单个音频的下载任务。
 class DownloadTask {
   DownloadTask({
@@ -48,10 +55,19 @@ class DownloadTask {
 
 /// 下载管理器：串行下载、进度回调、落库与本地文件管理。
 class DownloadState extends ChangeNotifier {
-  DownloadState(this._library);
+  DownloadState(
+    this._library, {
+    DownloadFile? downloadFile,
+    Future<Directory> Function(int)? workDirectory,
+  }) : _downloadFile = downloadFile ?? ApiClient.instance.downloadRaw,
+       _workDirectory = workDirectory ?? _workDir;
 
   final LibraryState _library;
   final ApiClient _api = ApiClient.instance;
+  final DownloadFile _downloadFile;
+  final Future<Directory> Function(int) _workDirectory;
+  final Set<int> _deletingWorks = {};
+  Completer<void>? _currentFinished;
 
   final Map<String, DownloadTask> _tasks = {};
   bool _running = false;
@@ -89,6 +105,9 @@ class DownloadState extends ChangeNotifier {
     var queued = 0;
     var skipped = 0;
     final existing = await _library.downloadedPaths(work.id);
+    if (_deletingWorks.contains(work.id)) {
+      return (queued: 0, skipped: tracks.length);
+    }
 
     for (final t in tracks) {
       final hash = t.hash;
@@ -138,7 +157,15 @@ class DownloadState extends ChangeNotifier {
           }
         }
         if (next == null) break;
-        await _downloadOne(next);
+        final finished = Completer<void>();
+        _currentFinished = finished;
+        try {
+          await _downloadOne(next);
+        } finally {
+          _current = null;
+          _currentFinished = null;
+          finished.complete();
+        }
       }
     } finally {
       _running = false;
@@ -150,21 +177,21 @@ class DownloadState extends ChangeNotifier {
   Future<void> _downloadOne(DownloadTask task) async {
     task.status = DownloadStatus.running;
     _current = task;
-    notifyListeners();
-
-    final dir = await _workDir(task.workId);
-    final safeName = _safeFileName(task.title);
-    final file = File(
-      p.join(dir.path, '${task.hash.replaceAll('/', '_')}_$safeName'),
-    );
-
     final token = CancelToken();
     _cancelToken = token;
+    notifyListeners();
+    File? file;
     try {
+      final dir = await _workDirectory(task.workId);
+      final safeName = _safeFileName(task.title);
+      file = File(
+        p.join(dir.path, '${task.hash.replaceAll('/', '_')}_$safeName'),
+      );
+      if (token.isCancelled) throw token.cancelError!;
       if (await file.exists()) {
         await file.delete();
       }
-      await _api.downloadRaw(
+      await _downloadFile(
         url: task.url,
         savePath: file.path,
         cancelToken: token,
@@ -175,6 +202,7 @@ class DownloadState extends ChangeNotifier {
           notifyListeners();
         },
       );
+      if (token.isCancelled) throw token.cancelError!;
       final size = await file.length();
       task
         ..status = DownloadStatus.done
@@ -201,7 +229,7 @@ class DownloadState extends ChangeNotifier {
           ..error = e is ApiException ? e.message : '$e';
       }
       try {
-        if (await file.exists()) await file.delete();
+        if (file != null && await file.exists()) await file.delete();
       } catch (_) {}
     } finally {
       _cancelToken = null;
@@ -211,12 +239,21 @@ class DownloadState extends ChangeNotifier {
 
   /// 取消当前下载（未开始的任务会保留在队列中）。
   void cancelCurrent() {
-    _cancelToken?.cancel('user');
-    _current?.status = DownloadStatus.cancelled;
+    final task = _current;
+    if (task != null) cancel(task);
+  }
+
+  void cancel(DownloadTask task) {
+    if (!task.isActive) return;
+    task.status = DownloadStatus.cancelled;
+    if (identical(task, _current)) _cancelToken?.cancel('user');
     notifyListeners();
   }
 
   void retry(DownloadTask task) {
+    if (_deletingWorks.contains(task.workId) || identical(task, _current)) {
+      return;
+    }
     task
       ..status = DownloadStatus.queued
       ..error = null
@@ -228,17 +265,30 @@ class DownloadState extends ChangeNotifier {
 
   /// 删除某作品的全部本地文件。
   Future<void> deleteWorkFiles(int workId) async {
-    final rows = await _library.downloadsFor(workId);
-    for (final row in rows) {
-      try {
-        final f = File(row.filePath);
-        if (await f.exists()) await f.delete();
-      } catch (_) {
-        // 文件可能已被手动删除。
+    if (!_deletingWorks.add(workId)) return;
+    try {
+      final finished = _current?.workId == workId
+          ? _currentFinished?.future
+          : null;
+      for (final task in tasksOf(workId)) {
+        cancel(task);
       }
+      // 下载可能已进入落库阶段，必须等它完成后再查询并删除记录。
+      if (finished != null) await finished;
+      final rows = await _library.downloadsFor(workId);
+      for (final row in rows) {
+        try {
+          final f = File(row.filePath);
+          if (await f.exists()) await f.delete();
+        } catch (_) {
+          // 文件可能已被手动删除。
+        }
+      }
+      await _library.deleteDownloadsOfWork(workId);
+      _tasks.removeWhere((_, t) => t.workId == workId);
+    } finally {
+      _deletingWorks.remove(workId);
     }
-    await _library.deleteDownloadsOfWork(workId);
-    _tasks.removeWhere((_, t) => t.workId == workId);
     notifyListeners();
   }
 
@@ -252,7 +302,7 @@ class DownloadState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<Directory> _workDir(int workId) async {
+  static Future<Directory> _workDir(int workId) async {
     final base = await getApplicationDocumentsDirectory();
     final dir = Directory(p.join(base.path, 'asmr_downloads', '$workId'));
     if (!await dir.exists()) await dir.create(recursive: true);
