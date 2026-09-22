@@ -14,7 +14,9 @@ import 'tag_browse_screen.dart';
 
 /// 搜索页：历史 / 热门标签 + 结果列表。
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({super.key, this.api});
+
+  final ApiClient? api;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -39,11 +41,19 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _onChanged(String value) {
+    setState(() {});
     _debouncer.run(() => _search(value, record: false));
   }
 
   void _search(String keyword, {bool record = true}) {
     final k = keyword.trim();
+    if (record) {
+      _debouncer.cancel();
+      if (k.isNotEmpty) {
+        context.read<SettingsState>().addSearchHistory(k);
+        _focus.unfocus();
+      }
+    }
     if (k == _keyword && _feed != null) return;
     setState(() {
       _keyword = k;
@@ -51,7 +61,7 @@ class _SearchScreenState extends State<SearchScreen> {
       _feed = k.isEmpty
           ? null
           : WorkFeed(
-              (page, pageSize) => ApiClient.instance.search(
+              (page, pageSize) => (widget.api ?? ApiClient.instance).search(
                 k,
                 page: page,
                 pageSize: pageSize,
@@ -63,10 +73,6 @@ class _SearchScreenState extends State<SearchScreen> {
     });
     if (k.isEmpty) return;
     _feed?.load();
-    if (record) {
-      context.read<SettingsState>().addSearchHistory(k);
-    }
-    _focus.unfocus();
   }
 
   @override
