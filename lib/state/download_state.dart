@@ -31,6 +31,8 @@ class DownloadTask {
     required this.title,
     required this.url,
     this.duration = 0,
+    this.trackIndex = 0,
+    this.folderLabel = '',
   });
 
   final int workId;
@@ -39,6 +41,8 @@ class DownloadTask {
   final String title;
   final String url;
   final double duration;
+  final int trackIndex;
+  final String folderLabel;
 
   DownloadStatus status = DownloadStatus.queued;
   double progress = 0;
@@ -67,6 +71,7 @@ class DownloadState extends ChangeNotifier {
   final DownloadFile _downloadFile;
   final Future<Directory> Function(int) _workDirectory;
   final Set<int> _deletingWorks = {};
+  bool _clearing = false;
   Completer<void>? _currentFinished;
 
   final Map<String, DownloadTask> _tasks = {};
@@ -105,7 +110,7 @@ class DownloadState extends ChangeNotifier {
     var queued = 0;
     var skipped = 0;
     final existing = await _library.downloadedPaths(work.id);
-    if (_deletingWorks.contains(work.id)) {
+    if (_clearing || _deletingWorks.contains(work.id)) {
       return (queued: 0, skipped: tracks.length);
     }
 
@@ -135,6 +140,8 @@ class DownloadState extends ChangeNotifier {
         title: t.title,
         url: url,
         duration: t.duration,
+        trackIndex: tracks.indexOf(t),
+        folderLabel: t.folderLabel,
       );
       queued++;
     }
@@ -218,6 +225,8 @@ class DownloadState extends ChangeNotifier {
           filePath: file.path,
           size: size,
           duration: task.duration,
+          trackIndex: task.trackIndex,
+          folderLabel: task.folderLabel,
         ),
       );
     } catch (e) {
@@ -251,7 +260,9 @@ class DownloadState extends ChangeNotifier {
   }
 
   void retry(DownloadTask task) {
-    if (_deletingWorks.contains(task.workId) || identical(task, _current)) {
+    if (_clearing ||
+        _deletingWorks.contains(task.workId) ||
+        identical(task, _current)) {
       return;
     }
     task
@@ -261,6 +272,25 @@ class DownloadState extends ChangeNotifier {
       ..received = 0;
     notifyListeners();
     unawaited(_pump());
+  }
+
+  /// 删除某作品的全部本地文件。
+  Future<void> clearAll() async {
+    _clearing = true;
+    try {
+      final finished = _currentFinished?.future;
+      for (final task in tasks) {
+        cancel(task);
+      }
+      if (finished != null) await finished;
+      for (final row in [..._library.downloads]) {
+        await deleteFile(row);
+      }
+      _tasks.clear();
+    } finally {
+      _clearing = false;
+      notifyListeners();
+    }
   }
 
   /// 删除某作品的全部本地文件。

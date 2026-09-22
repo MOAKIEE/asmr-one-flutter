@@ -14,23 +14,30 @@ class LibraryDb {
 
   final Database _db;
 
-  static const int _version = 1;
+  static const int _version = 2;
   static const String _name = 'asmr_one_library.db';
 
   static Future<LibraryDb> open() async {
-    Database? db;
-    try {
-      final dir = await getDatabasesPath();
-      db = await _openAt(p.join(dir, _name));
-    } catch (_) {
-      // 磁盘库不可用时退回内存库：功能可用性不变，只是不持久化。
-      db = await _openAt(inMemoryDatabasePath);
-    }
+    final dir = await getDatabasesPath();
+    final db = await _openAt(p.join(dir, _name));
     return LibraryDb._(db);
   }
 
-  static Future<Database> _openAt(String path) =>
-      openDatabase(path, version: _version, onCreate: _createSchema);
+  static Future<Database> _openAt(String path) => openDatabase(
+    path,
+    version: _version,
+    onCreate: _createSchema,
+    onUpgrade: (db, old, next) async {
+      if (old < 2) {
+        await db.execute(
+          'ALTER TABLE downloads ADD COLUMN track_index INTEGER NOT NULL DEFAULT 0',
+        );
+        await db.execute(
+          "ALTER TABLE downloads ADD COLUMN folder_label TEXT NOT NULL DEFAULT ''",
+        );
+      }
+    },
+  );
 
   static Future<void> _createSchema(Database db, int version) async {
     await db.execute('''
@@ -74,6 +81,8 @@ class LibraryDb {
             file_path TEXT NOT NULL,
             size INTEGER NOT NULL DEFAULT 0,
             duration REAL NOT NULL DEFAULT 0,
+            track_index INTEGER NOT NULL DEFAULT 0,
+            folder_label TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL,
             UNIQUE(work_id, hash)
           )
@@ -99,7 +108,7 @@ class LibraryDb {
   // 收藏
   // ---------------------------------------------------------------------------
 
-  Future<List<Work>> favorites({int limit = 500, int offset = 0}) async {
+  Future<List<Work>> favorites({int? limit, int offset = 0}) async {
     final rows = await _db.query(
       'favorites',
       orderBy: 'created_at DESC',
@@ -147,7 +156,7 @@ class LibraryDb {
   // 历史
   // ---------------------------------------------------------------------------
 
-  Future<List<Work>> history({int limit = 500, int offset = 0}) async {
+  Future<List<Work>> history({int? limit, int offset = 0}) async {
     final rows = await _db.query(
       'history',
       orderBy: 'played_at DESC',
@@ -432,6 +441,8 @@ class DownloadRow {
     required this.filePath,
     this.size = 0,
     this.duration = 0,
+    this.trackIndex = 0,
+    this.folderLabel = '',
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -443,6 +454,8 @@ class DownloadRow {
   final String filePath;
   final int size;
   final double duration;
+  final int trackIndex;
+  final String folderLabel;
   final DateTime createdAt;
 
   Map<String, dynamic> toMap() => {
@@ -454,6 +467,8 @@ class DownloadRow {
     'file_path': filePath,
     'size': size,
     'duration': duration,
+    'track_index': trackIndex,
+    'folder_label': folderLabel,
     'created_at': createdAt.millisecondsSinceEpoch,
   };
 
@@ -466,6 +481,8 @@ class DownloadRow {
     filePath: (m['file_path'] ?? '') as String,
     size: (m['size'] ?? 0) as int,
     duration: ((m['duration'] ?? 0) as num).toDouble(),
+    trackIndex: (m['track_index'] as int?) ?? 0,
+    folderLabel: (m['folder_label'] as String?) ?? '',
     createdAt: DateTime.fromMillisecondsSinceEpoch(
       (m['created_at'] ?? 0) as int,
     ),

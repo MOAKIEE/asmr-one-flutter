@@ -34,9 +34,52 @@ Future<void> main() async {
   );
 
   final prefs = await AppPrefs.load();
-  final db = await LibraryDb.open();
+  runApp(StorageBootstrap(prefs: prefs));
+}
 
-  runApp(BootstrapApp(prefs: prefs, db: db));
+/// A failed disk database must never silently become temporary storage.
+class StorageBootstrap extends StatefulWidget {
+  const StorageBootstrap({super.key, required this.prefs});
+  final AppPrefs prefs;
+  @override
+  State<StorageBootstrap> createState() => _StorageBootstrapState();
+}
+
+class _StorageBootstrapState extends State<StorageBootstrap> {
+  late Future<LibraryDb> _opening = LibraryDb.open();
+  @override
+  Widget build(BuildContext context) => FutureBuilder<LibraryDb>(
+    future: _opening,
+    builder: (context, snapshot) {
+      if (snapshot.hasData) {
+        return BootstrapApp(prefs: widget.prefs, db: snapshot.data!);
+      }
+      return MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: snapshot.hasError
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('无法打开本地资料库。请检查剩余存储空间后重试，现有数据不会被清除。'),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: () => setState(() {
+                            _opening = LibraryDb.open();
+                          }),
+                          child: const Text('重试'),
+                        ),
+                      ],
+                    )
+                  : const CircularProgressIndicator(),
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 /// 装配依赖并交给 [AsmrOneApp]。

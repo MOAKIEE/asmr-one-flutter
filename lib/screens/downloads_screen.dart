@@ -111,7 +111,8 @@ class DownloadsScreen extends StatelessWidget {
           .showSnackBar(SnackBar(content: Text(l('download.empty'))));
       return;
     }
-    final ok = await player.playLocalFiles(work, paths);
+    final rows = await library.downloadsFor(work.id);
+    final ok = await player.playLocalFiles(work, paths, metadata: rows);
     if (!context.mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(

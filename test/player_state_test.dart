@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:asmr_one/core/models/work.dart';
 import 'package:asmr_one/core/storage/app_prefs.dart';
+import 'package:asmr_one/core/storage/library_db.dart';
 import 'package:asmr_one/state/library_state.dart';
 import 'package:asmr_one/state/player_state.dart' as app;
 import 'package:asmr_one/state/settings_state.dart';
@@ -27,6 +28,8 @@ class TestLibrary implements LibraryState {
 }
 
 class TestAudio implements AudioPlayer {
+  bool failLoading = false;
+  int playCalls = 0;
   final events = StreamController<PlayerState>.broadcast();
   List<AudioSource> sources = [];
   int? index;
@@ -52,6 +55,7 @@ class TestAudio implements AudioPlayer {
     Duration? initialPosition,
     ShuffleOrder? shuffleOrder,
   }) async {
+    if (failLoading) throw StateError('missing audio');
     this.sources = sources;
     index = initialIndex;
     position = initialPosition ?? Duration.zero;
@@ -69,11 +73,17 @@ class TestAudio implements AudioPlayer {
 
   @override
   Future<void> play() async {
+    playCalls++;
     playing = true;
   }
 
   @override
   Future<void> pause() async {
+    playing = false;
+  }
+
+  @override
+  Future<void> stop() async {
     playing = false;
   }
 
@@ -94,6 +104,64 @@ class TestAudio implements AudioPlayer {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'failed source loading does not report success or start playback',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = SettingsState(await AppPrefs.load());
+      final audio = TestAudio()..failLoading = true;
+      final player = app.PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: audio,
+      );
+      expect(
+        await player.playLocalFiles(Work.fromJson({'id': 1}), {
+          'a': '/missing.mp3',
+        }),
+        isFalse,
+      );
+      expect(audio.playCalls, 0);
+      expect(player.error, contains('missing audio'));
+      player.dispose();
+      settings.dispose();
+    },
+  );
+  test(
+    'offline queue uses original titles and track order instead of hashes',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = SettingsState(await AppPrefs.load());
+      final player = app.PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: TestAudio(),
+      );
+      await player.playLocalFiles(
+        Work.fromJson({'id': 1}),
+        {'a': '/a_last.mp3', 'z': '/z_first.mp3'},
+        metadata: [
+          DownloadRow(
+            workId: 1,
+            hash: 'a',
+            title: 'Last',
+            filePath: '/a_last.mp3',
+            trackIndex: 1,
+          ),
+          DownloadRow(
+            workId: 1,
+            hash: 'z',
+            title: 'First',
+            filePath: '/z_first.mp3',
+            trackIndex: 0,
+          ),
+        ],
+      );
+      expect(player.queue.map((e) => e.title), ['First', 'Last']);
+      player.dispose();
+      settings.dispose();
+    },
+  );
   test('local playback restores progress, respects single-track mode and manual next', () async {
     SharedPreferences.setMockInitialValues({
       'player.autoPlayNext': false,

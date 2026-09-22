@@ -288,10 +288,8 @@ class SettingsScreen extends StatelessWidget {
 
     final library = context.read<LibraryState>();
     final downloads = context.read<DownloadState>();
-    // 先删掉本地的离线音频文件，再清空数据库记录。
-    for (final row in library.downloads) {
-      await downloads.deleteFile(row);
-    }
+    await context.read<PlayerState>().stop();
+    await downloads.clearAll();
     await library.clearAllLocalData();
     await settings.clearSearchHistory();
     if (!context.mounted) return;

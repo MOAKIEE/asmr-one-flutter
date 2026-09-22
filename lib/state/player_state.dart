@@ -14,6 +14,7 @@ import 'package:path/path.dart' as p;
 import '../core/api/api_client.dart';
 import '../core/models/track.dart';
 import '../core/models/work.dart';
+import '../core/storage/library_db.dart';
 import 'library_state.dart';
 import 'settings_state.dart';
 
@@ -249,6 +250,7 @@ class PlayerState extends ChangeNotifier {
 
     final items = <PlayItem>[];
     var unplayable = 0;
+    var selectedIndex = 0;
     for (final t in tracks) {
       final hash = t.hash;
       final local = hash == null ? null : localPaths[hash];
@@ -262,6 +264,7 @@ class PlayerState extends ChangeNotifier {
         unplayable++;
         continue;
       }
+      if (tracks.indexOf(t) < startIndex) selectedIndex++;
       items.add(
         PlayItem(
           workId: work.id,
@@ -286,9 +289,11 @@ class PlayerState extends ChangeNotifier {
       return (queued: 0, unplayable: unplayable);
     }
 
-    final index = startIndex.clamp(0, items.length - 1);
+    final index = selectedIndex.clamp(0, items.length - 1);
     _work = work;
-    await _load(items, index: index, shuffle: shuffle);
+    if (!await _load(items, index: index, shuffle: shuffle)) {
+      return (queued: 0, unplayable: unplayable);
+    }
     await _library.recordHistory(work);
     _player.play();
     notifyListeners();
@@ -298,32 +303,52 @@ class PlayerState extends ChangeNotifier {
   /// 直接播放已下载到本地的音频（无需网络）。
   ///
   /// [hashToPath] 为 `曲目 hash -> 本地文件路径`。返回是否成功入队。
-  Future<bool> playLocalFiles(Work work, Map<String, String> hashToPath) async {
+  Future<bool> playLocalFiles(
+    Work work,
+    Map<String, String> hashToPath, {
+    List<DownloadRow> metadata = const [],
+  }) async {
     if (hashToPath.isEmpty) {
       _error = '没有找到本地文件。';
       notifyListeners();
       return false;
     }
     final cover = _api.coverUrl(work.id, type: 'main');
-    final items =
-        hashToPath.entries
-            .map(
-              (e) => PlayItem(
-                workId: work.id,
-                workTitle: work.title,
-                title: p.basename(e.value),
-                hash: e.key,
-                url: '',
-                localPath: e.value,
-                coverUrl: cover,
-                circleName: work.circleName,
-              ),
-            )
-            .toList()
-          ..sort((a, b) => a.title.compareTo(b.title));
+    final byHash = {for (final row in metadata) row.hash: row};
+    final ordered = hashToPath.entries.toList()
+      ..sort((a, b) {
+        final left = byHash[a.key];
+        final right = byHash[b.key];
+        final order = (left?.trackIndex ?? 0).compareTo(right?.trackIndex ?? 0);
+        return order != 0
+            ? order
+            : (left?.title ?? p.basename(a.value)).compareTo(
+                right?.title ?? p.basename(b.value),
+              );
+      });
+    final items = ordered
+        .map(
+          (e) => PlayItem(
+            workId: work.id,
+            workTitle: work.title,
+            title: byHash[e.key]?.title ?? p.basename(e.value),
+            folderLabel: byHash[e.key]?.folderLabel ?? '',
+            duration: byHash[e.key] == null
+                ? null
+                : Duration(
+                    milliseconds: (byHash[e.key]!.duration * 1000).round(),
+                  ),
+            hash: e.key,
+            url: '',
+            localPath: e.value,
+            coverUrl: cover,
+            circleName: work.circleName,
+          ),
+        )
+        .toList();
 
     _work = work;
-    await _load(items);
+    if (!await _load(items)) return false;
     await _library.recordHistory(work);
     unawaited(_player.play());
     notifyListeners();
@@ -362,13 +387,13 @@ class PlayerState extends ChangeNotifier {
           : null,
     );
     _work = work;
-    await _load([item]);
+    if (!await _load([item])) return;
     await _library.recordHistory(work);
     _player.play();
     notifyListeners();
   }
 
-  Future<void> _load(
+  Future<bool> _load(
     List<PlayItem> items, {
     int index = 0,
     bool shuffle = false,
@@ -397,9 +422,12 @@ class PlayerState extends ChangeNotifier {
       await _player.setSpeed(_settings.playbackSpeed);
       await _player.setShuffleModeEnabled(shuffle);
       if (shuffle) await _player.shuffle();
+      return true;
     } catch (e) {
       _error = '加载音频失败：$e';
+      await _player.stop();
       notifyListeners();
+      return false;
     }
   }
 

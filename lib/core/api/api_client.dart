@@ -124,7 +124,9 @@ class ApiClient {
         return _unwrap(res);
       } on DioException catch (e) {
         lastError = e;
-        if (_isRetryable(e) && attempt < maxAttempts - 1) {
+        if ((method == 'GET' || method == 'HEAD') &&
+            _isRetryable(e) &&
+            attempt < maxAttempts - 1) {
           continue; // 换下一条线路
         }
         throw _mapDioError(e);
