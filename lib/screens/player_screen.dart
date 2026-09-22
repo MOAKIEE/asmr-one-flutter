@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../state/player_state.dart';
 import '../state/settings_state.dart';
 import '../widgets/common.dart';
+import 'listening_tools_screen.dart';
 
 /// 全屏播放器。
 class PlayerScreen extends StatefulWidget {
@@ -44,6 +45,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
       appBar: AppBar(
         title: Text(l('player.title')),
         actions: [
+          IconButton(
+            tooltip: l('notes.title'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ListeningToolsScreen()),
+            ),
+            icon: const Icon(Icons.subtitles_outlined),
+          ),
           IconButton(
             tooltip: l('player.queue'),
             onPressed: _openQueue,

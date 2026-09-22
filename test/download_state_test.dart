@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
+
 import 'package:asmr_one/core/models/track.dart';
 import 'package:asmr_one/core/models/work.dart';
 import 'package:asmr_one/core/storage/library_db.dart';
@@ -37,6 +39,9 @@ class DownloadLibrary extends ChangeNotifier implements LibraryState {
   Future<void> deleteDownloadsOfWork(int workId) async =>
       rows.removeWhere((r) => r.workId == workId);
   @override
+  Future<void> deleteDownload(int id) async =>
+      rows.removeWhere((r) => r.id == id);
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -60,6 +65,84 @@ Future<void> until(bool Function() predicate) async {
 }
 
 void main() {
+  test(
+    'restored queue waits for Wi-Fi and preserves manually paused tasks',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'asmr-restore-download-',
+      );
+      final network = StreamController<List<ConnectivityResult>>.broadcast();
+      final library = DownloadLibrary();
+      Object? saved;
+      final state = DownloadState(
+        library,
+        readQueue: () async => {
+          'wifiOnly': true,
+          'tasks': [
+            for (final hash in ['a', 'b'])
+              {
+                'workId': 1,
+                'workTitle': 'Work',
+                'hash': hash,
+                'title': '$hash.mp3',
+                'url': 'https://example.invalid/$hash',
+                'duration': 10,
+                'trackIndex': 0,
+                'folderLabel': '',
+                'status': hash == 'a' ? 'running' : 'paused',
+              },
+          ],
+        },
+        writeQueue: (value) async {
+          saved = value;
+        },
+        checkNetwork: () async => [ConnectivityResult.mobile],
+        networkChanges: network.stream,
+        workDirectory: (_) async => dir,
+        downloadFile:
+            ({required url, required savePath, cancelToken, onProgress}) async {
+              await File(savePath).writeAsBytes([1, 2, 3]);
+            },
+      );
+      await state.initialize();
+      expect(state.waitingForWifi, isTrue);
+      expect(state.tasks.first.status, DownloadStatus.queued);
+      expect(library.rows, isEmpty);
+      network.add([ConnectivityResult.wifi]);
+      await until(() => library.rows.length == 1 && state.current == null);
+      expect(state.tasks.last.status, DownloadStatus.paused);
+      expect((saved as Map)['tasks'], hasLength(1));
+      state.dispose();
+      await network.close();
+      await dir.delete(recursive: true);
+    },
+  );
+  test(
+    'clearAll cancels active and queued downloads and removes partial bytes',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('asmr-clear-download-');
+      final library = DownloadLibrary();
+      final started = Completer<void>();
+      final state = DownloadState(
+        library,
+        workDirectory: (_) async => dir,
+        downloadFile:
+            ({required url, required savePath, cancelToken, onProgress}) async {
+              await File('$savePath.part').writeAsBytes([1]);
+              started.complete();
+              await cancelToken!.whenCancel;
+            },
+      );
+      await state.enqueueWork(Work.fromJson({'id': 1}), tracks());
+      await started.future;
+      await state.clearAll();
+      expect(library.rows, isEmpty);
+      expect(state.tasks, isEmpty);
+      expect(await dir.list().toList(), isEmpty);
+      state.dispose();
+      await dir.delete(recursive: true);
+    },
+  );
   testWidgets('downloaded work has play button without favorites or history', (
     tester,
   ) async {

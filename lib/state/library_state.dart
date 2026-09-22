@@ -186,11 +186,13 @@ class LibraryState extends ChangeNotifier {
     required int workId,
     required int positionMs,
     required int durationMs,
-  }) => _db.saveProgress(
-    hash: hash,
-    workId: workId,
-    positionMs: positionMs,
-    durationMs: durationMs,
+  }) => _serial(
+    () => _db.saveProgress(
+      hash: hash,
+      workId: workId,
+      positionMs: positionMs,
+      durationMs: durationMs,
+    ),
   );
 
   Future<int> progressFor(String hash) => _db.progressFor(hash);

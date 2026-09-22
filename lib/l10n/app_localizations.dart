@@ -56,6 +56,22 @@ class _L10nDelegate extends LocalizationsDelegate<L10n> {
 // =============================================================================
 
 const Map<String, String> _zh = {
+  "notes.title": "字幕与书签",
+  "notes.subtitles": "字幕",
+  "notes.bookmarks": "书签",
+  "notes.bookmark": "时间点书签",
+  "notes.noteHint": "给这个片段添加备注（可选）",
+  "notes.addBookmark": "标记当前时间",
+  "notes.emptyBookmarks": "此曲目还没有书签",
+  "notes.importSubtitle": "导入字幕",
+  "notes.onlineSubtitle": "作品字幕",
+  "notes.noOnlineSubtitle": "作品中没有可用的 LRC / SRT / VTT 字幕，可从本地导入",
+  "notes.subtitleHint":
+      "为当前曲目选择 UTF-8 编码的 LRC、SRT 或 VTT 字幕。点击字幕可跳转，正偏移使字幕延后显示。",
+  "notes.offset": "偏移",
+  "notes.follow": "跟随播放",
+  "notes.clearLoop": "关闭 A–B 循环",
+  "notes.invalidLoop": "先设置 A 点，B 点需至少晚 0.5 秒",
   "player.stopAfterTrack": "播完本曲停止",
   "player.fadeHint": "定时关闭前 30 秒逐渐降低音量",
   "download.wifiOnly": "仅 Wi-Fi 下载",
@@ -290,6 +306,22 @@ const Map<String, String> _zh = {
 // =============================================================================
 
 const Map<String, String> _ja = {
+  "notes.title": "字幕とブックマーク",
+  "notes.subtitles": "字幕",
+  "notes.bookmarks": "ブックマーク",
+  "notes.bookmark": "ブックマーク",
+  "notes.noteHint": "この場面のメモ（任意）",
+  "notes.addBookmark": "現在位置を保存",
+  "notes.emptyBookmarks": "この曲にはブックマークがありません",
+  "notes.importSubtitle": "字幕を読み込む",
+  "notes.onlineSubtitle": "作品の字幕",
+  "notes.noOnlineSubtitle": "作品に対応字幕がありません。ローカルファイルを読み込めます",
+  "notes.subtitleHint":
+      "現在の曲に UTF-8 の LRC、SRT、VTT 字幕を選択します。行をタップすると移動します。正のオフセットは表示を遅らせます。",
+  "notes.offset": "オフセット",
+  "notes.follow": "再生に追従",
+  "notes.clearLoop": "A–B リピート解除",
+  "notes.invalidLoop": "A を設定し、B は 0.5 秒以上後に設定してください",
   "player.stopAfterTrack": "この曲の終了後に停止",
   "player.fadeHint": "終了前の 30 秒間で音量を徐々に下げます",
   "download.wifiOnly": "Wi-Fi のみでダウンロード",
@@ -525,6 +557,22 @@ const Map<String, String> _ja = {
 // =============================================================================
 
 const Map<String, String> _en = {
+  "notes.title": "Subtitles and bookmarks",
+  "notes.subtitles": "Subtitles",
+  "notes.bookmarks": "Bookmarks",
+  "notes.bookmark": "Bookmark",
+  "notes.noteHint": "Add a note for this moment (optional)",
+  "notes.addBookmark": "Bookmark this moment",
+  "notes.emptyBookmarks": "No bookmarks for this track",
+  "notes.importSubtitle": "Import subtitles",
+  "notes.onlineSubtitle": "Work subtitles",
+  "notes.noOnlineSubtitle":
+      "No supported subtitles in this work; import a local file",
+  "notes.subtitleHint": "Choose UTF-8 LRC, SRT or VTT subtitles for this track. Tap a line to seek. Positive offset delays subtitles.",
+  "notes.offset": "Offset",
+  "notes.follow": "Follow playback",
+  "notes.clearLoop": "Clear A–B loop",
+  "notes.invalidLoop": "Set A first; B must be more than 0.5 seconds later",
   "player.stopAfterTrack": "Stop after this track",
   "player.fadeHint": "Volume fades during the last 30 seconds",
   "download.wifiOnly": "Download over Wi-Fi only",

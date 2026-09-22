@@ -616,6 +616,7 @@ class PlayerState extends ChangeNotifier {
               : Duration.zero);
       if (version != _loadVersion) return false;
       await _setSources(items, index, resume);
+      if (version != _loadVersion) return false;
       if (resume > Duration.zero &&
           _player.duration != null &&
           resume >= _player.duration! - const Duration(seconds: 3)) {
@@ -627,6 +628,7 @@ class PlayerState extends ChangeNotifier {
       await _persistSession();
       return true;
     } catch (e) {
+      if (version != _loadVersion) return false;
       _error = '加载音频失败：$e';
       await _player.stop();
       notifyListeners();
@@ -690,6 +692,7 @@ class PlayerState extends ChangeNotifier {
   Future<void> seekToIndex(int index) async {
     if (index < 0 || index >= _queue.length) return;
     _saveProgress();
+    if (index != _currentIndex) clearAbLoop();
     if (_singleSource) {
       await _setSources(_queue, index, Duration.zero);
     } else {
@@ -719,12 +722,15 @@ class PlayerState extends ChangeNotifier {
     };
     _loopMode = next;
     await _player.setLoopMode(
-      _singleSource && next == ja.LoopMode.all ? ja.LoopMode.off : next,
+      _stopAfterTrack || (_singleSource && next == ja.LoopMode.all)
+          ? ja.LoopMode.off
+          : next,
     );
     notifyListeners();
   }
 
   Future<void> stop() async {
+    _loadVersion++;
     _saveProgress();
     await _player.stop();
     _queue = const [];
@@ -808,7 +814,12 @@ class PlayerState extends ChangeNotifier {
     var changed = false;
     final refreshed = <PlayItem>[];
     for (final item in _queue) {
-      if (item.isLocal || item.url.isNotEmpty) {
+      final uri = Uri.tryParse(item.url);
+      final isApiMedia =
+          uri != null &&
+          uri.path.startsWith('/api/media/') &&
+          ApiClient.baseUrls.any((base) => Uri.parse(base).host == uri.host);
+      if (item.isLocal || (!isApiMedia && item.url.isNotEmpty)) {
         refreshed.add(item);
         continue;
       }
@@ -817,7 +828,10 @@ class PlayerState extends ChangeNotifier {
         refreshed.add(item);
         continue;
       }
-      final url = _api.mediaStreamUrl(hash);
+      final url = _api.mediaStreamUrl(
+        hash,
+        lowQuality: _settings.preferLowQuality,
+      );
       changed = true;
       refreshed.add(
         PlayItem(
@@ -835,6 +849,7 @@ class PlayerState extends ChangeNotifier {
     }
     if (!changed) return;
     final index = _currentIndex;
+    final wasPlaying = playing;
     _queue = refreshed;
     try {
       await _setSources(
@@ -842,6 +857,7 @@ class PlayerState extends ChangeNotifier {
         index.clamp(0, refreshed.length - 1),
         _player.position,
       );
+      if (wasPlaying) unawaited(_player.play());
     } catch (_) {
       // 忽略：下一次播放会重新加载。
     }

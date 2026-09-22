@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 
@@ -546,6 +547,25 @@ class ApiClient {
       return mediaDownloadUrl(node.hash!);
     }
     return null;
+  }
+
+  /// 网站上的作品页面地址。
+  Future<String> fetchSubtitle(TrackNode node) async {
+    final url = resolveDownloadUrl(node);
+    if (url == null) throw ApiException('无法获取字幕地址');
+    final response = await _dio.get<ResponseBody>(
+      url,
+      options: Options(
+        responseType: ResponseType.stream,
+        headers: {'Referer': '$siteUrl/'},
+      ),
+    );
+    final bytes = <int>[];
+    await for (final chunk in response.data!.stream) {
+      bytes.addAll(chunk);
+      if (bytes.length > 2 * 1024 * 1024) throw ApiException('字幕超过 2 MB');
+    }
+    return utf8.decode(bytes);
   }
 
   /// 网站上的作品页面地址。

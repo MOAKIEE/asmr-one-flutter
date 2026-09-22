@@ -66,8 +66,11 @@ class DownloadState extends ChangeNotifier {
     Future<Directory> Function(int)? workDirectory,
     this.readQueue,
     this.writeQueue,
+    Future<List<ConnectivityResult>> Function()? checkNetwork,
+    this.networkChanges,
   }) : _downloadFile = downloadFile ?? ApiClient.instance.downloadRaw,
-       _workDirectory = workDirectory ?? _workDir;
+       _workDirectory = workDirectory ?? _workDir,
+       _checkNetwork = checkNetwork ?? Connectivity().checkConnectivity;
 
   final LibraryState _library;
   final ApiClient _api = ApiClient.instance;
@@ -75,6 +78,9 @@ class DownloadState extends ChangeNotifier {
   final Future<Directory> Function(int) _workDirectory;
   final Future<Object?> Function()? readQueue;
   final Future<void> Function(Object?)? writeQueue;
+  final Future<List<ConnectivityResult>> Function() _checkNetwork;
+  final Stream<List<ConnectivityResult>>? networkChanges;
+  Future<void>? _initialization;
   StreamSubscription<List<ConnectivityResult>>? _networkSubscription;
   bool _wifiOnly = false;
   bool _networkAllowed = true;
@@ -128,7 +134,9 @@ class DownloadState extends ChangeNotifier {
     return task.url;
   }
 
-  Future<void> initialize() async {
+  Future<void> initialize() => _initialization ??= _initialize();
+
+  Future<void> _initialize() async {
     final saved = await readQueue?.call();
     if (saved is Map) {
       _wifiOnly = saved['wifiOnly'] == true;
@@ -155,22 +163,23 @@ class DownloadState extends ChangeNotifier {
         }
       }
     }
-    final connectivity = Connectivity();
     _networkAllowed =
-        !_wifiOnly ||
-        (await connectivity.checkConnectivity()).contains(
-          ConnectivityResult.wifi,
-        );
-    _networkSubscription = connectivity.onConnectivityChanged.listen((result) {
-      _networkAllowed = !_wifiOnly || result.contains(ConnectivityResult.wifi);
-      if (!_networkAllowed && _current != null) {
-        _current!.status = DownloadStatus.queued;
-        _cancelToken?.cancel('wifi');
-      } else if (_networkAllowed) {
-        unawaited(_pump());
-      }
-      notifyListeners();
-    });
+        !_wifiOnly || (await _checkNetwork()).contains(ConnectivityResult.wifi);
+    if (_disposed) return;
+    _networkSubscription =
+        (networkChanges ?? Connectivity().onConnectivityChanged).listen((
+          result,
+        ) {
+          _networkAllowed =
+              !_wifiOnly || result.contains(ConnectivityResult.wifi);
+          if (!_networkAllowed && _current?.status == DownloadStatus.running) {
+            _current!.status = DownloadStatus.queued;
+            _cancelToken?.cancel('wifi');
+          } else if (_networkAllowed) {
+            unawaited(_pump());
+          }
+          notifyListeners();
+        });
     notifyListeners();
     unawaited(_pump());
   }
@@ -178,11 +187,8 @@ class DownloadState extends ChangeNotifier {
   Future<void> setWifiOnly(bool value) async {
     _wifiOnly = value;
     _networkAllowed =
-        !value ||
-        (await Connectivity().checkConnectivity()).contains(
-          ConnectivityResult.wifi,
-        );
-    if (!_networkAllowed && _current != null) {
+        !value || (await _checkNetwork()).contains(ConnectivityResult.wifi);
+    if (!_networkAllowed && _current?.status == DownloadStatus.running) {
       _current!.status = DownloadStatus.queued;
       _cancelToken?.cancel('wifi');
     }
@@ -250,6 +256,7 @@ class DownloadState extends ChangeNotifier {
     Work work,
     List<AudioTrack> tracks,
   ) async {
+    if (readQueue != null) await initialize();
     var queued = 0;
     var skipped = 0;
     final existing = await _library.downloadedPaths(work.id);
@@ -442,6 +449,7 @@ class DownloadState extends ChangeNotifier {
 
   /// 删除某作品的全部本地文件。
   Future<void> clearAll() async {
+    if (readQueue != null) await initialize();
     _clearing = true;
     try {
       final finished = _currentFinished?.future;
@@ -465,6 +473,7 @@ class DownloadState extends ChangeNotifier {
 
   /// 删除某作品的全部本地文件。
   Future<void> deleteWorkFiles(int workId) async {
+    if (readQueue != null) await initialize();
     if (!_deletingWorks.add(workId)) return;
     try {
       final finished = _current?.workId == workId
