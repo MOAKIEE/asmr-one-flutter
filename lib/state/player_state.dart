@@ -48,9 +48,15 @@ class PlayItem {
 
 /// 播放器状态：队列管理、进度、倍速、定时关闭、封面取色。
 class PlayerState extends ChangeNotifier {
-  PlayerState({required SettingsState settings, required LibraryState library})
-    : _settings = settings,
-      _library = library {
+  PlayerState({
+    required SettingsState settings,
+    required LibraryState library,
+    ja.AudioPlayer? audioPlayer,
+  }) : _settings = settings,
+       _library = library,
+       _player = audioPlayer ?? ja.AudioPlayer() {
+    _autoPlayNext = settings.autoPlayNext;
+    _settings.addListener(_settingsChanged);
     _player.setSpeed(settings.playbackSpeed);
     _bind();
   }
@@ -59,7 +65,11 @@ class PlayerState extends ChangeNotifier {
   final LibraryState _library;
   final ApiClient _api = ApiClient.instance;
 
-  final ja.AudioPlayer _player = ja.AudioPlayer();
+  final ja.AudioPlayer _player;
+  late bool _autoPlayNext;
+  bool _singleSource = false;
+  bool _changingSources = false;
+  ja.LoopMode _loopMode = ja.LoopMode.off;
 
   ja.AudioPlayer get player => _player;
 
@@ -82,7 +92,7 @@ class PlayerState extends ChangeNotifier {
   bool get hasPrevious => _currentIndex > 0;
   double get speed => _player.speed;
   bool get shuffleEnabled => _player.shuffleModeEnabled;
-  ja.LoopMode get loopMode => _player.loopMode;
+  ja.LoopMode get loopMode => _loopMode;
 
   PlayItem? get currentItem =>
       (_currentIndex >= 0 && _currentIndex < _queue.length)
@@ -104,15 +114,16 @@ class PlayerState extends ChangeNotifier {
 
   void _bind() {
     _player.currentIndexStream.listen((index) {
-      if (index == null) return;
+      if (index == null || _singleSource || _changingSources) return;
       _currentIndex = index;
       _onItemChanged();
     });
     _player.playerStateStream.listen((state) {
-      if (state.processingState == ja.ProcessingState.completed) {
+      if (!_changingSources &&
+          state.processingState == ja.ProcessingState.completed) {
         if (!_settings.autoPlayNext) {
           _player.pause();
-          _player.seek(Duration.zero, index: _currentIndex);
+          _player.seek(Duration.zero, index: 0);
         } else if (_player.loopMode == ja.LoopMode.off && !hasNext) {
           // 队列播完，回到开头并暂停。
           _player.pause();
@@ -134,9 +145,51 @@ class PlayerState extends ChangeNotifier {
   Future<void> _onItemChanged() async {
     final item = currentItem;
     if (item == null) return;
-    _saveProgress();
     notifyListeners();
     await _applyAccent(item.coverUrl);
+  }
+
+  void _settingsChanged() {
+    if (_autoPlayNext == _settings.autoPlayNext) return;
+    _autoPlayNext = _settings.autoPlayNext;
+    if (_queue.isNotEmpty) unawaited(_reloadPlaybackMode());
+  }
+
+  Future<void> _reloadPlaybackMode() async {
+    final wasPlaying = playing;
+    try {
+      await _setSources(_queue, _currentIndex, _player.position);
+      if (wasPlaying) unawaited(_player.play());
+    } catch (e) {
+      _error = '更新播放模式失败：$e';
+    }
+    notifyListeners();
+  }
+
+  // 关闭自动下一首时只向底层提交当前曲目，保留应用内完整队列。
+  Future<void> _setSources(
+    List<PlayItem> items,
+    int index,
+    Duration position,
+  ) async {
+    _changingSources = true;
+    _singleSource = !_settings.autoPlayNext;
+    _currentIndex = index;
+    try {
+      await _player.setLoopMode(
+        _singleSource && _loopMode == ja.LoopMode.all
+            ? ja.LoopMode.off
+            : _loopMode,
+      );
+      await _player.setAudioSources(
+        (_singleSource ? [items[index]] : items).map(_toSource).toList(),
+        initialIndex: _singleSource ? 0 : index,
+        initialPosition: position,
+      );
+    } finally {
+      _changingSources = false;
+    }
+    unawaited(_onItemChanged());
   }
 
   void _saveProgress() {
@@ -272,7 +325,7 @@ class PlayerState extends ChangeNotifier {
     _work = work;
     await _load(items);
     await _library.recordHistory(work);
-    await _player.play();
+    unawaited(_player.play());
     notifyListeners();
     return true;
   }
@@ -320,18 +373,27 @@ class PlayerState extends ChangeNotifier {
     int index = 0,
     bool shuffle = false,
   }) async {
+    _saveProgress();
     _error = null;
     _queue = items;
     _currentIndex = index;
     notifyListeners();
 
-    final sources = items.map(_toSource).toList(growable: false);
     try {
-      await _player.setAudioSources(
-        sources,
-        initialIndex: index,
-        initialPosition: Duration.zero,
-      );
+      final item = items[index];
+      final saved = item.hash == null
+          ? 0
+          : await _library.progressFor(item.hash!);
+      final duration = item.duration?.inMilliseconds;
+      final resume = saved > 0 && (duration == null || saved < duration - 3000)
+          ? Duration(milliseconds: saved)
+          : Duration.zero;
+      await _setSources(items, index, resume);
+      if (resume > Duration.zero &&
+          _player.duration != null &&
+          resume >= _player.duration! - const Duration(seconds: 3)) {
+        await _player.seek(Duration.zero);
+      }
       await _player.setSpeed(_settings.playbackSpeed);
       await _player.setShuffleModeEnabled(shuffle);
       if (shuffle) await _player.shuffle();
@@ -380,8 +442,7 @@ class PlayerState extends ChangeNotifier {
 
   Future<void> next() async {
     if (!hasNext) return;
-    await _player.seek(Duration.zero, index: _currentIndex + 1);
-    if (!_player.playing) await _player.play();
+    await seekToIndex(_currentIndex + 1);
   }
 
   Future<void> previous() async {
@@ -390,16 +451,20 @@ class PlayerState extends ChangeNotifier {
       await _player.seek(Duration.zero);
       return;
     }
-    await _player.seek(Duration.zero, index: _currentIndex - 1);
-    if (!_player.playing) await _player.play();
+    await seekToIndex(_currentIndex - 1);
   }
 
   Future<void> seek(Duration position) => _player.seek(position);
 
   Future<void> seekToIndex(int index) async {
     if (index < 0 || index >= _queue.length) return;
-    await _player.seek(Duration.zero, index: index);
-    await _player.play();
+    _saveProgress();
+    if (_singleSource) {
+      await _setSources(_queue, index, Duration.zero);
+    } else {
+      await _player.seek(Duration.zero, index: index);
+    }
+    unawaited(_player.play());
   }
 
   Future<void> setSpeed(double value) async {
@@ -416,12 +481,15 @@ class PlayerState extends ChangeNotifier {
   }
 
   Future<void> cycleLoopMode() async {
-    final next = switch (_player.loopMode) {
+    final next = switch (_loopMode) {
       ja.LoopMode.off => ja.LoopMode.all,
       ja.LoopMode.all => ja.LoopMode.one,
       ja.LoopMode.one => ja.LoopMode.off,
     };
-    await _player.setLoopMode(next);
+    _loopMode = next;
+    await _player.setLoopMode(
+      _singleSource && next == ja.LoopMode.all ? ja.LoopMode.off : next,
+    );
     notifyListeners();
   }
 
@@ -450,11 +518,7 @@ class PlayerState extends ChangeNotifier {
     final position = wasCurrent ? Duration.zero : _player.position;
     _queue = next;
     try {
-      await _player.setAudioSources(
-        next.map(_toSource).toList(growable: false),
-        initialIndex: resumeIndex,
-        initialPosition: position,
-      );
+      await _setSources(next, resumeIndex, position);
       if (wasPlaying) await _player.play();
     } catch (e) {
       _error = '更新队列失败：$e';
@@ -523,9 +587,10 @@ class PlayerState extends ChangeNotifier {
     final index = _currentIndex;
     _queue = refreshed;
     try {
-      await _player.setAudioSources(
-        refreshed.map(_toSource).toList(growable: false),
-        initialIndex: index.clamp(0, refreshed.length - 1),
+      await _setSources(
+        refreshed,
+        index.clamp(0, refreshed.length - 1),
+        _player.position,
       );
     } catch (_) {
       // 忽略：下一次播放会重新加载。
@@ -540,6 +605,7 @@ class PlayerState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _settings.removeListener(_settingsChanged);
     _sleepTimer?.cancel();
     _progressTimer?.cancel();
     _saveProgress();
