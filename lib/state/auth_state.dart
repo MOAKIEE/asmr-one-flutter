@@ -10,13 +10,13 @@ import '../core/storage/app_prefs.dart';
 
 /// 登录状态 + 依赖登录态的云端数据（播放列表、标签目录）。
 class AuthState extends ChangeNotifier {
-  AuthState(this._prefs) {
+  AuthState(this._prefs, {ApiClient? api}) : _api = api ?? ApiClient.instance {
     _api.attachPrefs(_prefs);
     _token = _prefs.token;
   }
 
   final AppPrefs _prefs;
-  final ApiClient _api = ApiClient.instance;
+  final ApiClient _api;
 
   String? _token;
   AppUser _user = AppUser.anonymous;
@@ -93,6 +93,7 @@ class AuthState extends ChangeNotifier {
       // 静默失败：保持本地状态，离线可用。
     }
     notifyListeners();
+    if (loggedIn) _fireAndForget(_loadCloudData());
   }
 
   Future<bool> login(String name, String password) async {
