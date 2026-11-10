@@ -30,6 +30,16 @@ class _SearchScreenState extends State<SearchScreen> {
   WorkFeed? _feed;
   String _keyword = '';
   bool _listMode = false;
+  bool? _showNsfw;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final showNsfw = context.watch<SettingsState>().showNsfw;
+    if (_showNsfw == showNsfw) return;
+    _showNsfw = showNsfw;
+    if (_feed != null) _search(_keyword, record: false, force: true);
+  }
 
   @override
   void dispose() {
@@ -45,7 +55,7 @@ class _SearchScreenState extends State<SearchScreen> {
     _debouncer.run(() => _search(value, record: false));
   }
 
-  void _search(String keyword, {bool record = true}) {
+  void _search(String keyword, {bool record = true, bool force = false}) {
     final k = keyword.trim();
     if (record) {
       _debouncer.cancel();
@@ -54,7 +64,7 @@ class _SearchScreenState extends State<SearchScreen> {
         _focus.unfocus();
       }
     }
-    if (k == _keyword && _feed != null) return;
+    if (!force && k == _keyword && _feed != null) return;
     setState(() {
       _keyword = k;
       _feed?.dispose();

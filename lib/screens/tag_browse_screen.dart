@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/models/common.dart';
+import '../core/models/work.dart';
 import '../l10n/app_localizations.dart';
 import '../state/auth_state.dart';
 import '../state/settings_state.dart';
@@ -24,22 +25,22 @@ class _TagBrowseScreenState extends State<TagBrowseScreen> {
   late final BrowseController _controller;
   late List<int> _selected;
   bool _listMode = false;
-  bool _initialised = false;
+  bool? _showNsfw;
 
   @override
   void initState() {
     super.initState();
     _selected = widget.initialTag == null ? [] : [widget.initialTag!.id];
-    _controller = BrowseController();
+    _controller = BrowseController(initial: WorkQuery(tags: _selected));
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_initialised) return;
-    _initialised = true;
-    final settings = context.read<SettingsState>();
-    _reload(settings.showNsfw);
+    final showNsfw = context.watch<SettingsState>().showNsfw;
+    if (_showNsfw == showNsfw) return;
+    _showNsfw = showNsfw;
+    _controller.setShowNsfw(showNsfw).ignore();
   }
 
   void _reload(bool showNsfw) {

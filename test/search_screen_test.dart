@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class SearchApi implements ApiClient {
   final keywords = <String>[];
+  final nsfwFilters = <bool?>[];
   @override
   Future<WorksPage> search(
     String keyword, {
@@ -24,6 +25,7 @@ class SearchApi implements ApiClient {
     bool? nsfw,
   }) async {
     keywords.add(keyword);
+    nsfwFilters.add(nsfw);
     return WorksPage.empty;
   }
 
@@ -32,6 +34,31 @@ class SearchApi implements ApiClient {
 }
 
 void main() {
+  testWidgets(
+    'changing content preference reloads the current search without adding history',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = SettingsState(await AppPrefs.load());
+      final api = SearchApi();
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: settings,
+          child: MaterialApp(home: SearchScreen(api: api)),
+        ),
+      );
+      await tester.enterText(find.byType(TextField), 'asmr');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      settings.showNsfw = false;
+      await tester.pump();
+      await tester.pump();
+      expect(api.keywords, ['asmr', 'asmr']);
+      expect(api.nsfwFilters, [null, false]);
+      expect(settings.searchHistory, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+      settings.dispose();
+    },
+  );
   testWidgets(
     'debounce keeps focus; submit records history without a duplicate request',
     (tester) async {

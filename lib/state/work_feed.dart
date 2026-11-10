@@ -109,29 +109,33 @@ class WorkFeed extends ChangeNotifier {
 
 /// 浏览页控制器：持有查询条件并驱动 [WorkFeed]。
 class BrowseController extends ChangeNotifier {
-  BrowseController({WorkQuery? initial})
-    : _query = initial ?? const WorkQuery() {
+  BrowseController({WorkQuery? initial, ApiClient? api})
+    : _query = initial ?? const WorkQuery(),
+      _api = api ?? ApiClient.instance {
     _rebuildFeed();
   }
 
   WorkQuery _query;
+  bool _showNsfw = true;
   late WorkFeed feed;
 
   WorkQuery get query => _query;
   WorkFeed get works => feed;
 
-  final ApiClient _api = ApiClient.instance;
+  final ApiClient _api;
 
   void _rebuildFeed() {
+    final query = _query;
     feed = WorkFeed(
       (page, pageSize) =>
-          _api.fetchWorks(_query.copyWith(page: page, pageSize: pageSize)),
+          _api.fetchWorks(query.copyWith(page: page, pageSize: pageSize)),
       pageSize: 24,
       label: 'browse',
     );
   }
 
   Future<void> update(WorkQuery next, {bool reload = true}) async {
+    if (!_showNsfw) next = next.copyWith(nsfw: false);
     final queryChanged =
         next.order != _query.order ||
         next.sort != _query.sort ||
@@ -158,6 +162,13 @@ class BrowseController extends ChangeNotifier {
       update(_query.copyWith(order: order, sort: sort));
 
   Future<void> clearFilters() => update(const WorkQuery());
+
+  Future<void> setShowNsfw(bool value) {
+    _showNsfw = value;
+    return update(
+      _query.copyWith(nsfw: value ? null : false, clearNsfw: value),
+    );
+  }
 
   @override
   void dispose() {

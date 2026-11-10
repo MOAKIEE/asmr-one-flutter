@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/api/api_client.dart';
@@ -18,6 +19,7 @@ class WorkRail extends StatefulWidget {
     this.onSeeAll,
     this.cardWidth = 146,
     this.pageSize = 12,
+    this.api,
   });
 
   final String title;
@@ -27,25 +29,44 @@ class WorkRail extends StatefulWidget {
   final VoidCallback? onSeeAll;
   final double cardWidth;
   final int pageSize;
+  final ApiClient? api;
 
   @override
   State<WorkRail> createState() => _WorkRailState();
 }
 
 class _WorkRailState extends State<WorkRail> {
-  late final WorkFeed _feed;
+  late WorkFeed _feed;
 
   @override
   void initState() {
     super.initState();
+    _buildFeed();
+  }
+
+  void _buildFeed() {
+    final query = widget.query;
     _feed = WorkFeed(
-      (page, pageSize) => ApiClient.instance.fetchWorks(
-        widget.query.copyWith(page: page, pageSize: pageSize),
+      (page, pageSize) => (widget.api ?? ApiClient.instance).fetchWorks(
+        query.copyWith(page: page, pageSize: pageSize),
       ),
       pageSize: widget.pageSize,
       label: 'rail:${widget.title}',
     );
     _feed.load();
+  }
+
+  @override
+  void didUpdateWidget(covariant WorkRail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!mapEquals(
+          oldWidget.query.toQueryParameters(),
+          widget.query.toQueryParameters(),
+        ) ||
+        oldWidget.pageSize != widget.pageSize) {
+      _feed.dispose();
+      _buildFeed();
+    }
   }
 
   @override

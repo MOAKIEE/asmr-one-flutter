@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/api/api_client.dart';
 import '../core/models/common.dart';
 import '../core/models/work.dart';
 import '../l10n/app_localizations.dart';
@@ -13,7 +14,9 @@ import 'tag_browse_screen.dart';
 
 /// 浏览页：排序 + 多条件筛选 + 网格 / 列表浏览。
 class BrowseScreen extends StatefulWidget {
-  const BrowseScreen({super.key});
+  const BrowseScreen({super.key, this.api});
+
+  final ApiClient? api;
 
   @override
   State<BrowseScreen> createState() => _BrowseScreenState();
@@ -22,29 +25,21 @@ class BrowseScreen extends StatefulWidget {
 class _BrowseScreenState extends State<BrowseScreen> {
   late final BrowseController _controller;
   bool _listMode = false;
-  bool _initialised = false;
+  bool? _showNsfw;
 
   @override
   void initState() {
     super.initState();
-    _controller = BrowseController();
+    _controller = BrowseController(api: widget.api);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_initialised) return;
-    _initialised = true;
-    // 首次进入时按「是否包含 18 禁」设置初始化筛选条件。
-    final settings = context.read<SettingsState>();
-    _controller
-        .update(
-          const WorkQuery().copyWith(
-            nsfw: settings.showNsfw ? null : false,
-            clearNsfw: settings.showNsfw,
-          ),
-        )
-        .ignore();
+    final showNsfw = context.watch<SettingsState>().showNsfw;
+    if (_showNsfw == showNsfw) return;
+    _showNsfw = showNsfw;
+    _controller.setShowNsfw(showNsfw).ignore();
   }
 
   @override
