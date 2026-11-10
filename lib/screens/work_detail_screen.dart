@@ -16,6 +16,7 @@ import '../state/download_state.dart';
 import '../state/library_state.dart';
 import '../state/player_state.dart';
 import '../state/settings_state.dart';
+import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
 import '../widgets/work_rail.dart';
 import 'player_screen.dart';
@@ -217,7 +218,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     final tasks = downloads.tasksOf(_work.id);
     final activeTasks = tasks.where((t) => t.isActive).length;
 
-    return Scaffold(
+    return PlayerScaffold(
       body: CustomScrollView(
         slivers: [
           SliverAppBar(

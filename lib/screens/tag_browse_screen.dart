@@ -6,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import '../state/auth_state.dart';
 import '../state/settings_state.dart';
 import '../state/work_feed.dart';
+import '../widgets/player_scaffold.dart';
 import '../widgets/work_grid.dart';
 import 'tag_picker_screen.dart';
 
@@ -89,7 +90,7 @@ class _TagBrowseScreenState extends State<TagBrowseScreen> {
         if (seen.add(t.id)) t,
     ];
 
-    return Scaffold(
+    return PlayerScaffold(
       appBar: AppBar(
         title: Text(
           _selected.isEmpty

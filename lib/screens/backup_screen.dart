@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../state/library_state.dart';
+import '../widgets/player_scaffold.dart';
 
 class BackupScreen extends StatefulWidget {
   const BackupScreen({super.key});
@@ -59,7 +60,7 @@ class _BackupScreenState extends State<BackupScreen> {
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
-    return Scaffold(
+    return PlayerScaffold(
       appBar: AppBar(title: Text(l('backup.title'))),
       body: ListView(
         padding: const EdgeInsets.all(20),

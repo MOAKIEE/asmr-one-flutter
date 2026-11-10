@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
-import '../state/player_state.dart';
+import '../widgets/player_scaffold.dart';
 import 'browse_screen.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
@@ -19,26 +18,18 @@ class RootShell extends StatefulWidget {
 class _RootShellState extends State<RootShell> {
   int _index = 0;
 
-  static const _playerBarHeight = 82.0;
-
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
-    final hasPlayer = context.select<PlayerState, bool>((p) => p.hasQueue);
-
-    return Scaffold(
-      body: Padding(
-        // 给悬浮的迷你播放条留出空间，避免遮挡列表末尾内容。
-        padding: EdgeInsets.only(bottom: hasPlayer ? _playerBarHeight : 0),
-        child: IndexedStack(
-          index: _index,
-          children: const [
-            HomeScreen(),
-            BrowseScreen(),
-            SearchScreen(),
-            LibraryScreen(),
-          ],
-        ),
+    return PlayerScaffold(
+      body: IndexedStack(
+        index: _index,
+        children: const [
+          HomeScreen(),
+          BrowseScreen(),
+          SearchScreen(),
+          LibraryScreen(),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,

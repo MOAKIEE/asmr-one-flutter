@@ -8,6 +8,7 @@ import '../state/download_state.dart';
 import '../state/library_state.dart';
 import '../state/player_state.dart';
 import '../core/storage/library_db.dart';
+import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
 
 /// 离线下载管理页。
@@ -36,7 +37,7 @@ class DownloadsScreen extends StatelessWidget {
       byWork.putIfAbsent(row.workId, () => []).add(row);
     }
 
-    return Scaffold(
+    return PlayerScaffold(
       appBar: AppBar(
         title: Text(l('download.title')),
         actions: [

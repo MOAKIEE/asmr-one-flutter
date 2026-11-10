@@ -5,6 +5,7 @@ import '../core/theme/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../state/auth_state.dart';
 import '../state/player_state.dart';
+import '../widgets/player_scaffold.dart';
 
 /// 登录 / 注册页。
 class LoginScreen extends StatefulWidget {
@@ -39,7 +40,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final scheme = theme.colorScheme;
     final auth = context.watch<AuthState>();
 
-    return Scaffold(
+    return PlayerScaffold(
       appBar: AppBar(title: Text(l('auth.login'))),
       body: Center(
         child: SingleChildScrollView(

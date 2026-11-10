@@ -10,6 +10,7 @@ import '../state/download_state.dart';
 import '../state/library_state.dart';
 import '../state/player_state.dart';
 import '../state/settings_state.dart';
+import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
 import 'login_screen.dart';
 import 'backup_screen.dart';
@@ -24,7 +25,7 @@ class SettingsScreen extends StatelessWidget {
     final settings = context.watch<SettingsState>();
     final auth = context.watch<AuthState>();
 
-    return Scaffold(
+    return PlayerScaffold(
       appBar: AppBar(title: Text(l('settings.title'))),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 40),

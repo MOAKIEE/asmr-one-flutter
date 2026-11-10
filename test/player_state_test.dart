@@ -33,6 +33,7 @@ class TestAudio implements AudioPlayer {
   int playCalls = 0;
   final events = StreamController<PlayerState>.broadcast();
   final positions = StreamController<Duration>.broadcast();
+  final indices = StreamController<int?>.broadcast();
   @override
   bool shuffleModeEnabled = false;
   @override
@@ -55,7 +56,14 @@ class TestAudio implements AudioPlayer {
   @override
   LoopMode loopMode = LoopMode.off;
   @override
-  Stream<int?> get currentIndexStream => const Stream.empty();
+  Stream<int?> get currentIndexStream => indices.stream;
+  @override
+  Stream<Duration?> get durationStream => Stream.value(duration);
+  List<int>? shuffledOrder;
+  @override
+  List<int> get effectiveIndices => shuffleModeEnabled && shuffledOrder != null
+      ? shuffledOrder!
+      : List.generate(sources.length, (index) => index);
   @override
   Stream<Duration> get positionStream => positions.stream;
   @override
@@ -73,6 +81,7 @@ class TestAudio implements AudioPlayer {
     if (failLoading) throw StateError('missing audio');
     this.sources = sources;
     index = initialIndex;
+    indices.add(index);
     position = initialPosition ?? Duration.zero;
     return duration;
   }
@@ -114,12 +123,14 @@ class TestAudio implements AudioPlayer {
   Future<void> seek(Duration? position, {int? index}) async {
     this.position = position ?? Duration.zero;
     this.index = index ?? this.index;
+    if (index != null) indices.add(index);
   }
 
   @override
   Future<void> dispose() async {
     await events.close();
     await positions.close();
+    await indices.close();
   }
 
   @override

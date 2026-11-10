@@ -5,6 +5,7 @@ import '../core/models/work.dart';
 import '../l10n/app_localizations.dart';
 import '../state/library_state.dart';
 import '../state/settings_state.dart';
+import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
 import '../widgets/work_card.dart';
 import 'playlist_screen.dart';
@@ -20,7 +21,7 @@ class FavoritesScreen extends StatelessWidget {
     final library = context.watch<LibraryState>();
     final works = library.favorites;
 
-    return Scaffold(
+    return PlayerScaffold(
       appBar: AppBar(
         title: Text(l('library.favorites')),
         actions: [
@@ -91,7 +92,7 @@ class HistoryScreen extends StatelessWidget {
     final library = context.watch<LibraryState>();
     final works = library.history;
 
-    return Scaffold(
+    return PlayerScaffold(
       appBar: AppBar(
         title: Text(l('library.history')),
         actions: [

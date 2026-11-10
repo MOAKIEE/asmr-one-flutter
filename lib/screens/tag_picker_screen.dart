@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/models/common.dart';
 import '../l10n/app_localizations.dart';
 import '../state/auth_state.dart';
+import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
 
 /// 多选标签页。返回值：
@@ -55,7 +56,7 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
               )
               .toList();
 
-    return Scaffold(
+    return PlayerScaffold(
       appBar: AppBar(
         title: Text(l('work.tags')),
         actions: [

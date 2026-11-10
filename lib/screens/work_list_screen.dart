@@ -6,6 +6,7 @@ import '../core/models/work.dart';
 import '../l10n/app_localizations.dart';
 import '../state/settings_state.dart';
 import '../state/work_feed.dart';
+import '../widgets/player_scaffold.dart';
 import '../widgets/work_grid.dart';
 
 /// 固定查询条件的作品列表页（「查看全部」、标签 / 社团 / 声优筛选结果）。
@@ -64,7 +65,7 @@ class _WorkListScreenState extends State<WorkListScreen> {
     final l = L10n.of(context);
     final settings = context.watch<SettingsState>();
 
-    return Scaffold(
+    return PlayerScaffold(
       appBar: AppBar(
         title: Text(widget.title, overflow: TextOverflow.ellipsis),
         actions: [

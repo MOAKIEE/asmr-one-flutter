@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../state/auth_state.dart';
 import '../state/library_state.dart';
 import '../state/settings_state.dart';
+import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
 import '../widgets/work_card.dart';
 
@@ -22,7 +23,7 @@ class PlaylistListScreen extends StatelessWidget {
     final auth = context.watch<AuthState>();
     final library = context.watch<LibraryState>();
 
-    return Scaffold(
+    return PlayerScaffold(
       appBar: AppBar(
         title: Text(l('playlist.title')),
         actions: [
@@ -236,7 +237,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     final l = L10n.of(context);
     final settings = context.watch<SettingsState>();
 
-    return Scaffold(
+    return PlayerScaffold(
       appBar: AppBar(title: Text(_title, overflow: TextOverflow.ellipsis)),
       body: _loading
           ? GridSkeleton(columns: settings.gridColumns)

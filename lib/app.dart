@@ -4,9 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'l10n/app_localizations.dart';
 import 'screens/root_shell.dart';
-import 'state/player_state.dart';
 import 'state/settings_state.dart';
-import 'widgets/mini_player.dart';
 
 /// 应用根组件。
 class AsmrOneApp extends StatelessWidget {
@@ -31,34 +29,6 @@ class AsmrOneApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       home: const RootShell(),
-      // 迷你播放器浮在所有路由之上，保证切页时音乐控制不中断。
-      builder: (context, child) {
-        return _PlayerOverlay(child: child ?? const SizedBox.shrink());
-      },
-    );
-  }
-}
-
-class _PlayerOverlay extends StatelessWidget {
-  const _PlayerOverlay({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final visible = context.select<PlayerState, bool>((p) => p.hasQueue);
-
-    return Stack(
-      children: [
-        child,
-        if (visible)
-          const Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SafeArea(top: false, child: MiniPlayer()),
-          ),
-      ],
     );
   }
 }
