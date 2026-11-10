@@ -33,9 +33,11 @@ class ApiException implements Exception {
 /// 站点前端会在多个镜像线路间切换（`api.asmr.one` / `api.asmr-100.com` …），
 /// 这里同样实现了自动故障转移：某个线路连接失败时按顺序尝试下一个。
 class ApiClient {
-  ApiClient._();
+  ApiClient({HttpClientAdapter? adapter}) {
+    if (adapter != null) _dio.httpClientAdapter = adapter;
+  }
 
-  static final ApiClient instance = ApiClient._();
+  static final ApiClient instance = ApiClient();
 
   /// 可用线路。官网同款顺序。
   static const List<String> baseUrls = [
@@ -157,8 +159,7 @@ class ApiClient {
     final data = res.data;
     if (code >= 200 && code < 300) return data;
 
-    final map = asMap(data);
-    final rawError = asStringOrNull(map['error']);
+    final rawError = _responseError(data);
     throw ApiException(
       _humanize(rawError) ?? '请求失败（HTTP $code）',
       statusCode: code,
@@ -167,8 +168,7 @@ class ApiClient {
   }
 
   ApiException _mapDioError(DioException e) {
-    final map = asMap(e.response?.data);
-    final rawError = asStringOrNull(map['error']);
+    final rawError = _responseError(e.response?.data);
     final code = e.response?.statusCode;
     final msg =
         _humanize(rawError) ??
@@ -181,6 +181,18 @@ class ApiClient {
           _ => '网络异常：${e.message ?? '未知错误'}',
         };
     return ApiException(msg, statusCode: code, rawError: rawError);
+  }
+
+  String? _responseError(dynamic data) {
+    final map = asMap(data);
+    final error = asStringOrNull(map['error']);
+    if (error != null) return error;
+
+    final messages = asMapList(map['errors'])
+        .map((entry) => asStringOrNull(entry['msg'])?.trim())
+        .whereType<String>()
+        .where((message) => message.isNotEmpty);
+    return messages.isEmpty ? null : messages.join('\n');
   }
 
   String? _humanize(String? raw) {
@@ -299,10 +311,10 @@ class ApiClient {
     return SessionInfo.fromJson(asMap(data));
   }
 
-  /// 登录成功返回 JWT。
+  /// POST 登录并返回 JWT；GET 同一路径用于读取会话。
   Future<String> login(String name, String password) async {
     final data = await _post(
-      '/api/login',
+      '/api/auth/me',
       body: {'name': name, 'password': password},
       auth: false,
     );

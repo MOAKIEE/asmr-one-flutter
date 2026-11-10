@@ -225,7 +225,7 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
       setState(() => _isRegister = false);
-      _toast(l('auth.loginSuccess'));
+      _toast(l('auth.registerSuccess'));
       return;
     }
 
