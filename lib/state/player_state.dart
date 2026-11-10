@@ -251,6 +251,7 @@ class PlayerState extends ChangeNotifier {
   ja.AudioPlayer get player => _player;
 
   List<PlayItem> _queue = const [];
+  List<int> _singleShuffleOrder = [];
   Work? _work;
   int _currentIndex = -1;
   String? _error;
@@ -265,11 +266,36 @@ class PlayerState extends ChangeNotifier {
   String? get error => _error;
   bool get hasQueue => _queue.isNotEmpty;
   bool get playing => _player.playing;
-  bool get hasNext => _currentIndex >= 0 && _currentIndex < _queue.length - 1;
-  bool get hasPrevious => _currentIndex > 0;
+  bool get hasNext => _relativeIndex(1) != null;
+  bool get hasPrevious => _relativeIndex(-1) != null;
   double get speed => _player.speed;
   bool get shuffleEnabled => _player.shuffleModeEnabled;
   ja.LoopMode get loopMode => _loopMode;
+
+  List<int> get _playOrder => !shuffleEnabled
+      ? List.generate(_queue.length, (index) => index)
+      : _singleSource
+      ? _singleShuffleOrder
+      : _player.effectiveIndices;
+
+  int? _relativeIndex(int offset) {
+    final order = _playOrder;
+    final current = order.indexOf(_currentIndex);
+    if (current < 0 || order.isEmpty) return null;
+    var next = current + offset;
+    if (next < 0 || next >= order.length) {
+      if (_loopMode != ja.LoopMode.all) return null;
+      next %= order.length;
+    }
+    return order[next];
+  }
+
+  void _shuffleSingleQueue(int index) {
+    _singleShuffleOrder = List.generate(_queue.length, (i) => i)..shuffle();
+    _singleShuffleOrder
+      ..remove(index)
+      ..insert(0, index);
+  }
 
   PlayItem? get currentItem =>
       (_currentIndex >= 0 && _currentIndex < _queue.length)
@@ -301,14 +327,15 @@ class PlayerState extends ChangeNotifier {
     _subscriptions.add(
       _player.playerStateStream.listen((state) {
         if (!_changingSources &&
+            hasQueue &&
             state.processingState == ja.ProcessingState.completed) {
           if (!_settings.autoPlayNext || _stopAfterTrack) {
             _player.pause();
             _player.seek(Duration.zero, index: 0);
-          } else if (_player.loopMode == ja.LoopMode.off && !hasNext) {
+          } else if (_player.loopMode == ja.LoopMode.off) {
             // 队列播完，回到开头并暂停。
             _player.pause();
-            _player.seek(Duration.zero, index: 0);
+            _player.seek(Duration.zero, index: _playOrder.first);
           }
         }
         notifyListeners();
@@ -370,6 +397,9 @@ class PlayerState extends ChangeNotifier {
   ) async {
     _changingSources = true;
     _singleSource = !_settings.autoPlayNext || _stopAfterTrack;
+    if (_singleSource && _singleShuffleOrder.length != items.length) {
+      _shuffleSingleQueue(index);
+    }
     _currentIndex = index;
     try {
       await _player.setLoopMode(
@@ -600,6 +630,7 @@ class PlayerState extends ChangeNotifier {
     _saveProgress();
     _error = null;
     _queue = items;
+    _singleShuffleOrder = [];
     _currentIndex = index;
     notifyListeners();
 
@@ -674,8 +705,9 @@ class PlayerState extends ChangeNotifier {
   }
 
   Future<void> next() async {
-    if (!hasNext) return;
-    await seekToIndex(_currentIndex + 1);
+    final index = _relativeIndex(1);
+    if (index == null) return;
+    await seekToIndex(index);
   }
 
   Future<void> previous() async {
@@ -684,7 +716,7 @@ class PlayerState extends ChangeNotifier {
       await _player.seek(Duration.zero);
       return;
     }
-    await seekToIndex(_currentIndex - 1);
+    await seekToIndex(_relativeIndex(-1)!);
   }
 
   Future<void> seek(Duration position) => _player.seek(position);
@@ -710,7 +742,10 @@ class PlayerState extends ChangeNotifier {
   Future<void> toggleShuffle() async {
     final enable = !_player.shuffleModeEnabled;
     await _player.setShuffleModeEnabled(enable);
-    if (enable) await _player.shuffle();
+    if (enable) {
+      await _player.shuffle();
+      if (_singleSource) _shuffleSingleQueue(_currentIndex);
+    }
     notifyListeners();
   }
 
