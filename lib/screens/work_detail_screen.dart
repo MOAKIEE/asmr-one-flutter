@@ -9,6 +9,7 @@ import '../core/models/common.dart';
 import '../core/models/review.dart';
 import '../core/models/track.dart';
 import '../core/models/work.dart';
+import '../core/theme/app_theme.dart';
 import '../core/utils/formatters.dart';
 import '../l10n/app_localizations.dart';
 import '../state/auth_state.dart';
@@ -390,7 +391,8 @@ class _CoverBackdrop extends StatelessWidget {
           url: work.mainCoverUrl,
           seedId: work.id,
           radius: 0,
-          blur: false,
+          blur: true,
+          showRevealButton: false,
         ),
         DecoratedBox(
           decoration: BoxDecoration(
@@ -398,8 +400,8 @@ class _CoverBackdrop extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                scheme.surface.withValues(alpha: 0.15),
-                scheme.surface.withValues(alpha: 0.65),
+                scheme.surface.withValues(alpha: 0.25),
+                scheme.surface.withValues(alpha: 0.72),
                 scheme.surface,
               ],
               stops: const [0.0, 0.62, 1.0],
@@ -603,11 +605,13 @@ class _HeaderCard extends StatelessWidget {
                 active: isFavorite,
                 onTap: onFavorite,
               ),
+              const SizedBox(width: 8),
               _ActionButton(
                 icon: Icons.playlist_add_rounded,
                 label: l('action.addToPlaylist'),
                 onTap: onPlaylist,
               ),
+              const SizedBox(width: 8),
               _ActionButton(
                 icon: activeDownloads > 0
                     ? Icons.downloading_rounded
@@ -615,6 +619,7 @@ class _HeaderCard extends StatelessWidget {
                 label: activeDownloads > 0
                     ? '$activeDownloads'
                     : l('action.download'),
+                active: activeDownloads > 0,
                 onTap: onDownload,
               ),
             ],
@@ -650,25 +655,38 @@ class _ActionButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final color = active ? scheme.primary : scheme.onSurfaceVariant;
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Column(
-            children: [
-              Icon(icon, size: 21, color: color),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: color,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+      child: Material(
+        color: active
+            ? scheme.primary.withValues(alpha: 0.14)
+            : scheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+            color: active
+                ? scheme.primary.withValues(alpha: 0.4)
+                : scheme.outlineVariant.withValues(alpha: 0.45),
+          ),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+            child: Column(
+              children: [
+                Icon(icon, size: 20, color: color),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: color,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -710,10 +728,7 @@ class _InfoTable extends StatelessWidget {
       padding: const EdgeInsets.only(top: 14),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.45),
-          borderRadius: BorderRadius.circular(16),
-        ),
+        decoration: AppDecor.groupBox(theme.colorScheme, radius: 16),
         child: Column(
           children: [
             for (var i = 0; i < rows.length; i++) ...[

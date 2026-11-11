@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 import '../state/download_state.dart';
 import '../state/library_state.dart';
 import '../state/player_state.dart';
+import '../state/settings_state.dart';
 import '../core/storage/library_db.dart';
 import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
@@ -56,18 +57,25 @@ class DownloadsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
-          SwitchListTile(
-            title: Text(l('download.wifiOnly')),
-            subtitle: downloads.waitingForWifi
-                ? Text(l('download.waitingWifi'))
-                : null,
-            value: downloads.wifiOnly,
-            onChanged: downloads.setWifiOnly,
+          AppGroupCard(
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: SwitchListTile(
+              secondary: const Icon(Icons.wifi_rounded),
+              title: Text(l('download.wifiOnly')),
+              subtitle: downloads.waitingForWifi
+                  ? Text(l('download.waitingWifi'))
+                  : null,
+              value: downloads.wifiOnly,
+              onChanged: downloads.setWifiOnly,
+            ),
           ),
           if (rows.isEmpty && active.isEmpty && failed.isEmpty)
             Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(l('download.empty')),
+              padding: const EdgeInsets.only(top: 48),
+              child: EmptyView(
+                message: l('download.empty'),
+                icon: Icons.download_done_rounded,
+              ),
             ),
           if (active.isNotEmpty) ...[
             SectionHeader(
@@ -224,6 +232,7 @@ class _WorkDownloadGroup extends StatelessWidget {
     final l = L10n.of(context);
     final library = context.watch<LibraryState>();
     // 从收藏 / 历史里找到对应作品补全展示信息。
+    final settings = context.watch<SettingsState>();
     final work =
         _findWork(library, workId) ??
         Work.fromJson({
@@ -243,28 +252,47 @@ class _WorkDownloadGroup extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      rows.first.workTitle ?? work.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                  SizedBox(
+                    width: 56,
+                    child: CoverImage(
+                      url: work.mainCoverUrl,
+                      seedId: workId,
+                      radius: 12,
+                      blur: settings.blurNsfw && work.nsfw,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    Fmt.size(size),
-                    style: Theme.of(context).textTheme.labelSmall,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          rows.first.workTitle ?? work.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Text(
+                              l('download.taskCount', {'n': rows.length}),
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '· ${Fmt.size(size)}',
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                l('download.taskCount', {'n': rows.length}),
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   FilledButton.tonalIcon(

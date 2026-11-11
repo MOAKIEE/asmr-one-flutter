@@ -77,102 +77,119 @@ class _FilterSheetState extends State<_FilterSheet> {
             Expanded(
               child: ListView(
                 controller: controller,
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 children: [
-                  _Label(l('browse.order')),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final o in WorkOrder.values)
-                        if (o != WorkOrder.betterRandom)
-                          ChoiceChip(
-                            label: Text(_orderLabel(l, o)),
-                            selected: _order == o,
-                            onSelected: (_) => setState(() => _order = o),
+                  _FilterSection(
+                    title: l('browse.order'),
+                    icon: Icons.sort_rounded,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final o in WorkOrder.values)
+                              if (o != WorkOrder.betterRandom)
+                                ChoiceChip(
+                                  label: Text(_orderLabel(l, o)),
+                                  selected: _order == o,
+                                  onSelected: (_) =>
+                                      setState(() => _order = o),
+                                ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SegmentedButton<SortDirection>(
+                          segments: [
+                            ButtonSegment(
+                              value: SortDirection.desc,
+                              label: Text(l('sort.desc')),
+                              icon: const Icon(Icons.south_rounded, size: 16),
+                            ),
+                            ButtonSegment(
+                              value: SortDirection.asc,
+                              label: Text(l('sort.asc')),
+                              icon: const Icon(Icons.north_rounded, size: 16),
+                            ),
+                          ],
+                          selected: {_sort},
+                          onSelectionChanged: (s) =>
+                              setState(() => _sort = s.first),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  _FilterSection(
+                    title: l('browse.contentType'),
+                    icon: Icons.shield_outlined,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: SegmentedButton<int>(
+                        segments: [
+                          ButtonSegment(value: -1, label: Text(l('common.all'))),
+                          ButtonSegment(
+                            value: 0,
+                            label: Text(l('work.general')),
                           ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SegmentedButton<SortDirection>(
-                    segments: [
-                      ButtonSegment(
-                        value: SortDirection.desc,
-                        label: Text(l('sort.desc')),
-                        icon: const Icon(Icons.south_rounded, size: 16),
+                          ButtonSegment(value: 1, label: Text(l('work.adult'))),
+                        ],
+                        selected: {_nsfw == null ? -1 : (_nsfw! ? 1 : 0)},
+                        onSelectionChanged: (s) => setState(() {
+                          final v = s.first;
+                          _nsfw = v == -1 ? null : v == 1;
+                        }),
                       ),
-                      ButtonSegment(
-                        value: SortDirection.asc,
-                        label: Text(l('sort.asc')),
-                        icon: const Icon(Icons.north_rounded, size: 16),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  _FilterSection(
+                    title: l('browse.minRating'),
+                    icon: Icons.star_outline_rounded,
+                    trailing: Text(
+                      _rate <= 0 ? l('common.all') : _rate.toStringAsFixed(1),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w700,
                       ),
-                    ],
-                    selected: {_sort},
-                    onSelectionChanged: (s) => setState(() => _sort = s.first),
+                    ),
+                    child: Slider(
+                      value: _rate,
+                      min: 0,
+                      max: 5,
+                      divisions: 10,
+                      label: _rate <= 0
+                          ? l('common.all')
+                          : _rate.toStringAsFixed(1),
+                      onChanged: (v) => setState(() => _rate = v),
+                    ),
                   ),
-                  const SizedBox(height: 24),
-
-                  _Label(l('browse.contentType')),
-                  SegmentedButton<int>(
-                    segments: [
-                      ButtonSegment(value: -1, label: Text(l('common.all'))),
-                      ButtonSegment(value: 0, label: Text(l('work.general'))),
-                      ButtonSegment(value: 1, label: Text(l('work.adult'))),
-                    ],
-                    selected: {_nsfw == null ? -1 : (_nsfw! ? 1 : 0)},
-                    onSelectionChanged: (s) => setState(() {
-                      final v = s.first;
-                      _nsfw = v == -1 ? null : v == 1;
-                    }),
+                  const SizedBox(height: 18),
+                  _FilterSection(
+                    title: l('browse.minDuration'),
+                    icon: Icons.schedule_rounded,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final d in _durations)
+                          ChoiceChip(
+                            label: Text(_durationLabel(l, d)),
+                            selected: _duration == d,
+                            onSelected: (_) => setState(() => _duration = d),
+                          ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 24),
-
-                  Row(
-                    children: [
-                      _Label(l('browse.minRating')),
-                      const Spacer(),
-                      Text(
-                        _rate <= 0 ? l('common.all') : _rate.toStringAsFixed(1),
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Slider(
-                    value: _rate,
-                    min: 0,
-                    max: 5,
-                    divisions: 10,
-                    label: _rate <= 0
-                        ? l('common.all')
-                        : _rate.toStringAsFixed(1),
-                    onChanged: (v) => setState(() => _rate = v),
-                  ),
-                  const SizedBox(height: 12),
-
-                  _Label(l('browse.minDuration')),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final d in _durations)
-                        ChoiceChip(
-                          label: Text(_durationLabel(l, d)),
-                          selected: _duration == d,
-                          onSelected: (_) => setState(() => _duration = d),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
+                  const SizedBox(height: 18),
                   _SwitchTile(
                     title: l('browse.subtitleOnly'),
                     icon: Icons.subtitles_rounded,
                     value: _subtitle,
                     onChanged: (v) => setState(() => _subtitle = v),
                   ),
+                  const SizedBox(height: 8),
                   _SwitchTile(
                     title: l('browse.withTranslation'),
                     icon: Icons.translate_rounded,
@@ -180,17 +197,34 @@ class _FilterSheetState extends State<_FilterSheet> {
                     onChanged: (v) => setState(() => _translation = v),
                   ),
                   const SizedBox(height: 8),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.sell_outlined),
-                    title: Text(l('work.tags')),
-                    subtitle: Text(
-                      _tags.isEmpty
-                          ? l('common.all')
-                          : l('tag.selectedCount', {'n': _tags.length}),
+                  Material(
+                    color: theme.colorScheme.surfaceContainerHigh.withValues(
+                      alpha: 0.45,
                     ),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: _pickTags,
+                    surfaceTintColor: Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(
+                        color: theme.colorScheme.outlineVariant.withValues(
+                          alpha: 0.4,
+                        ),
+                      ),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: ListTile(
+                      leading: const Icon(Icons.sell_outlined),
+                      title: Text(
+                        l('work.tags'),
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      subtitle: Text(
+                        _tags.isEmpty
+                            ? l('common.all')
+                            : l('tag.selectedCount', {'n': _tags.length}),
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: _pickTags,
+                    ),
                   ),
                 ],
               ),
@@ -275,19 +309,56 @@ class _FilterSheetState extends State<_FilterSheet> {
   }
 }
 
-class _Label extends StatelessWidget {
-  const _Label(this.text);
+class _FilterSection extends StatelessWidget {
+  const _FilterSection({
+    required this.title,
+    required this.icon,
+    required this.child,
+    this.trailing,
+  });
 
-  final String text;
+  final String title;
+  final IconData icon;
+  final Widget child;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.titleSmall
-            ?.copyWith(fontWeight: FontWeight.w700),
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHigh.withValues(alpha: 0.45),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+          color: scheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 17, color: scheme.primary),
+                const SizedBox(width: 7),
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                ?trailing,
+              ],
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
       ),
     );
   }
@@ -308,12 +379,23 @@ class _SwitchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      secondary: Icon(icon),
-      title: Text(title, style: Theme.of(context).textTheme.bodyMedium),
-      value: value,
-      onChanged: onChanged,
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHigh.withValues(alpha: 0.45),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: scheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: SwitchListTile(
+        secondary: Icon(icon),
+        title: Text(title, style: Theme.of(context).textTheme.bodyMedium),
+        value: value,
+        onChanged: onChanged,
+      ),
     );
   }
 }

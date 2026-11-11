@@ -24,6 +24,7 @@ class SettingsScreen extends StatelessWidget {
     final l = L10n.of(context);
     final settings = context.watch<SettingsState>();
     final auth = context.watch<AuthState>();
+    final scheme = Theme.of(context).colorScheme;
 
     return PlayerScaffold(
       appBar: AppBar(title: Text(l('settings.title'))),
@@ -35,31 +36,34 @@ class SettingsScreen extends StatelessWidget {
             title: l('settings.appearance'),
             icon: Icons.palette_outlined,
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+          _GroupCard(
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _RowLabel(l('settings.theme')),
-                SegmentedButton<ThemeMode>(
-                  segments: [
-                    ButtonSegment(
-                      value: ThemeMode.system,
-                      label: Text(l('settings.theme.system')),
-                    ),
-                    ButtonSegment(
-                      value: ThemeMode.light,
-                      label: Text(l('settings.theme.light')),
-                    ),
-                    ButtonSegment(
-                      value: ThemeMode.dark,
-                      label: Text(l('settings.theme.dark')),
-                    ),
-                  ],
-                  selected: {settings.themeMode},
-                  onSelectionChanged: (s) => settings.themeMode = s.first,
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<ThemeMode>(
+                    segments: [
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        label: Text(l('settings.theme.system')),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        label: Text(l('settings.theme.light')),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.dark,
+                        label: Text(l('settings.theme.dark')),
+                      ),
+                    ],
+                    selected: {settings.themeMode},
+                    onSelectionChanged: (s) => settings.themeMode = s.first,
+                  ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
                 _RowLabel(l('settings.accent')),
                 Wrap(
                   spacing: 12,
@@ -73,6 +77,7 @@ class SettingsScreen extends StatelessWidget {
                       ),
                   ],
                 ),
+                const SizedBox(height: 8),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(l('settings.coverAccent')),
@@ -83,11 +88,11 @@ class SettingsScreen extends StatelessWidget {
                     if (!v) settings.setDynamicAccent(null);
                   },
                 ),
-                const SizedBox(height: 8),
+                const Divider(height: 16),
                 _RowLabel(l('settings.language')),
                 const SizedBox(height: 4),
                 _LanguageSelector(settings: settings),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
                 _RowLabel('${l('browse.gridView')} · ${settings.gridColumns}'),
                 Slider(
                   value: settings.gridColumns.toDouble(),
@@ -106,94 +111,135 @@ class SettingsScreen extends StatelessWidget {
             title: l('settings.content'),
             icon: Icons.shield_outlined,
           ),
-          SwitchListTile(
-            secondary: const Icon(Icons.no_adult_content_rounded),
-            title: Text(l('settings.showNsfw')),
-            value: settings.showNsfw,
-            onChanged: (v) => settings.showNsfw = v,
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.blur_on_rounded),
-            title: Text(l('settings.blurNsfw')),
-            value: settings.blurNsfw,
-            onChanged: (v) => settings.blurNsfw = v,
+          _GroupCard(
+            child: Column(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.no_adult_content_rounded),
+                  title: Text(l('settings.showNsfw')),
+                  value: settings.showNsfw,
+                  onChanged: (v) => settings.showNsfw = v,
+                ),
+                const Divider(indent: 54, endIndent: 16),
+                SwitchListTile(
+                  secondary: const Icon(Icons.blur_on_rounded),
+                  title: Text(l('settings.blurNsfw')),
+                  value: settings.blurNsfw,
+                  onChanged: (v) => settings.blurNsfw = v,
+                ),
+              ],
+            ),
           ),
 
           // ---------------- 网络 ----------------
           SectionHeader(title: l('settings.network'), icon: Icons.wifi_rounded),
-          SwitchListTile(
-            secondary: const Icon(Icons.auto_mode_rounded),
-            title: Text(l('settings.lineAuto')),
-            subtitle: Text(
-              l('settings.lineCurrent', {'host': settings.currentHost}),
-            ),
-            value: settings.autoSelectLine,
-            onChanged: (v) => settings.autoSelectLine = v,
-          ),
-          if (!settings.autoSelectLine)
-            for (var i = 0; i < ApiClient.baseUrls.length; i++)
-              ListTile(
-                leading: Icon(
-                  settings.preferredLineIndex == i
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_unchecked_rounded,
+          _GroupCard(
+            child: Column(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.auto_mode_rounded),
+                  title: Text(l('settings.lineAuto')),
+                  subtitle: Text(
+                    l('settings.lineCurrent', {'host': settings.currentHost}),
+                  ),
+                  value: settings.autoSelectLine,
+                  onChanged: (v) => settings.autoSelectLine = v,
                 ),
-                title: Text(Uri.parse(ApiClient.baseUrls[i]).host),
-                onTap: () => settings.preferredLineIndex = i,
-              ),
+                if (!settings.autoSelectLine) ...[
+                  const Divider(height: 1),
+                  for (var i = 0; i < ApiClient.baseUrls.length; i++)
+                    ListTile(
+                      leading: Icon(
+                        settings.preferredLineIndex == i
+                            ? Icons.radio_button_checked_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        color: settings.preferredLineIndex == i
+                            ? scheme.primary
+                            : null,
+                      ),
+                      title: Text(Uri.parse(ApiClient.baseUrls[i]).host),
+                      onTap: () => settings.preferredLineIndex = i,
+                    ),
+                ],
+              ],
+            ),
+          ),
 
           // ---------------- 播放 ----------------
           SectionHeader(
             title: l('settings.playback'),
             icon: Icons.headphones_rounded,
           ),
-          SwitchListTile(
-            secondary: const Icon(Icons.data_saver_on_rounded),
-            title: Text(l('player.lowQuality')),
-            value: settings.preferLowQuality,
-            onChanged: (v) => settings.preferLowQuality = v,
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.skip_next_rounded),
-            title: Text(l('player.autoNext')),
-            value: settings.autoPlayNext,
-            onChanged: (v) => settings.autoPlayNext = v,
-          ),
-          ListTile(
-            leading: const Icon(Icons.speed_rounded),
-            title: Text(l('player.speed')),
-            subtitle: Text('${settings.playbackSpeed}x'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => _pickSpeed(context, settings),
+          _GroupCard(
+            child: Column(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.data_saver_on_rounded),
+                  title: Text(l('player.lowQuality')),
+                  value: settings.preferLowQuality,
+                  onChanged: (v) => settings.preferLowQuality = v,
+                ),
+                const Divider(indent: 54, endIndent: 16),
+                SwitchListTile(
+                  secondary: const Icon(Icons.skip_next_rounded),
+                  title: Text(l('player.autoNext')),
+                  value: settings.autoPlayNext,
+                  onChanged: (v) => settings.autoPlayNext = v,
+                ),
+                const Divider(indent: 54, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.speed_rounded),
+                  title: Text(l('player.speed')),
+                  subtitle: Text('${settings.playbackSpeed}x'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _pickSpeed(context, settings),
+                ),
+              ],
+            ),
           ),
 
           // ---------------- 存储 ----------------
-          ListTile(
-            leading: const Icon(Icons.import_export),
-            title: Text(l('backup.title')),
-            onTap: () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const BackupScreen())),
-          ),
           SectionHeader(
             title: l('settings.storage'),
             icon: Icons.sd_storage_outlined,
           ),
-          ListTile(
-            leading: const Icon(Icons.image_outlined),
-            title: Text(l('settings.clearCache')),
-            onTap: () async {
-              await DefaultCacheManager().emptyCache();
-              if (context.mounted) _toast(context, l('settings.cacheCleared'));
-            },
-          ),
-          ListTile(
-            leading: Icon(
-              Icons.delete_forever_outlined,
-              color: Theme.of(context).colorScheme.error,
+          _GroupCard(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.import_export_rounded),
+                  title: Text(l('backup.title')),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const BackupScreen()),
+                  ),
+                ),
+                const Divider(indent: 54, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.image_outlined),
+                  title: Text(l('settings.clearCache')),
+                  onTap: () async {
+                    await DefaultCacheManager().emptyCache();
+                    if (context.mounted) {
+                      _toast(context, l('settings.cacheCleared'));
+                    }
+                  },
+                ),
+                const Divider(indent: 54, endIndent: 16),
+                ListTile(
+                  leading: Icon(
+                    Icons.delete_forever_outlined,
+                    color: scheme.error,
+                  ),
+                  title: Text(
+                    l('settings.clearData'),
+                    style: TextStyle(color: scheme.error),
+                  ),
+                  subtitle: Text(l('settings.clearDataConfirm')),
+                  onTap: () => _confirmClear(context, settings, auth),
+                ),
+              ],
             ),
-            title: Text(l('settings.clearData')),
-            subtitle: Text(l('settings.clearDataConfirm')),
-            onTap: () => _confirmClear(context, settings, auth),
           ),
 
           // ---------------- 关于 ----------------
@@ -201,30 +247,44 @@ class SettingsScreen extends StatelessWidget {
             title: l('settings.about'),
             icon: Icons.info_outline_rounded,
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: Text(
-              l('settings.aboutText'),
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(height: 1.5),
+          _GroupCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                  child: Text(
+                    l('settings.aboutText'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.person_outline_rounded),
+                  title: Text(l('auth.login')),
+                  subtitle: Text(
+                    auth.hasToken
+                        ? (auth.user.displayName)
+                        : l('library.notLoggedIn'),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  ),
+                ),
+                const Divider(indent: 54, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.tag_rounded),
+                  title: Text(l('settings.version')),
+                  trailing: Text(
+                    '1.1.0 (${settings.currentHost})',
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ),
+              ],
             ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.person_outline_rounded),
-            title: Text(l('auth.login')),
-            subtitle: Text(
-              auth.hasToken
-                  ? (auth.user.displayName)
-                  : l('library.notLoggedIn'),
-            ),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const LoginScreen())),
-          ),
-          ListTile(
-            leading: const Icon(Icons.tag_rounded),
-            title: Text(l('settings.version')),
-            trailing: Text('1.1.0 (${settings.currentHost})'),
           ),
         ],
       ),
@@ -341,6 +401,22 @@ class _LanguageSelector extends StatelessWidget {
             onSelected: (_) => settings.locale = locale,
           ),
       ],
+    );
+  }
+}
+
+class _GroupCard extends StatelessWidget {
+  const _GroupCard({required this.child, this.padding});
+
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppGroupCard(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: padding,
+      child: child,
     );
   }
 }

@@ -140,10 +140,10 @@ class _OrderBar extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          height: 46,
+          height: 44,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: _options.length,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, i) {
@@ -153,6 +153,7 @@ class _OrderBar extends StatelessWidget {
                 child: ChoiceChip(
                   label: Text(_label(l, o)),
                   selected: selected,
+                  visualDensity: VisualDensity.compact,
                   onSelected: (_) => onChanged(
                     o,
                     selected && sort == SortDirection.desc
@@ -165,13 +166,14 @@ class _OrderBar extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 4),
+          padding: const EdgeInsets.fromLTRB(16, 2, 12, 6),
           child: Row(
             children: [
-              Text(
-                l('browse.resultCount', {'n': totalCount}),
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
+              if (totalCount > 0)
+                Text(
+                  l('browse.resultCount', {'n': totalCount}),
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
               const Spacer(),
               TextButton.icon(
                 onPressed: () => onChanged(
@@ -180,11 +182,18 @@ class _OrderBar extends StatelessWidget {
                       ? SortDirection.asc
                       : SortDirection.desc,
                 ),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                ),
                 icon: Icon(
                   sort == SortDirection.desc
-                      ? Icons.arrow_downward_rounded
-                      : Icons.arrow_upward_rounded,
-                  size: 16,
+                      ? Icons.south_rounded
+                      : Icons.north_rounded,
+                  size: 15,
                 ),
                 label: Text(
                   sort == SortDirection.desc ? l('sort.desc') : l('sort.asc'),

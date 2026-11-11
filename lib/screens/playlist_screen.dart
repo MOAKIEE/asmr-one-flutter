@@ -47,9 +47,15 @@ class PlaylistListScreen extends StatelessWidget {
             if (auth.playlists.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  l('playlist.empty'),
-                  style: Theme.of(context).textTheme.bodySmall,
+                child: Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: AppDecor.groupBox(
+                    Theme.of(context).colorScheme,
+                  ),
+                  child: Text(
+                    l('playlist.empty'),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
               )
             else
@@ -68,7 +74,7 @@ class PlaylistListScreen extends StatelessWidget {
                 ),
           ] else
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Card(
                 child: ListTile(
                   leading: const Icon(Icons.cloud_off_outlined),
@@ -84,9 +90,13 @@ class PlaylistListScreen extends StatelessWidget {
           if (library.localPlaylists.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                l('playlist.empty'),
-                style: Theme.of(context).textTheme.bodySmall,
+              child: Container(
+                padding: const EdgeInsets.all(18),
+                decoration: AppDecor.groupBox(Theme.of(context).colorScheme),
+                child: Text(
+                  l('playlist.empty'),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
             )
           else
@@ -151,28 +161,44 @@ class _PlaylistTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(13),
-          gradient: AppDecor.placeholderGradient(
-            Theme.of(context).colorScheme,
-            name.hashCode,
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Material(
+        color: scheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: scheme.outlineVariant.withValues(alpha: 0.4),
           ),
         ),
-        child: const Icon(
-          Icons.playlist_play_rounded,
-          color: Colors.white,
-          size: 24,
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(13),
+              gradient: AppDecor.placeholderGradient(scheme, name.hashCode),
+            ),
+            child: const Icon(
+              Icons.playlist_play_rounded,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          title: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(subtitle),
+          trailing: Icon(trailing, size: 18),
+          onTap: onTap,
+          onLongPress: onLongPress,
         ),
       ),
-      title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(subtitle),
-      trailing: Icon(trailing, size: 18),
-      onTap: onTap,
-      onLongPress: onLongPress,
     );
   }
 }

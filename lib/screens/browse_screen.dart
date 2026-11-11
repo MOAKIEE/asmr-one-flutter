@@ -252,18 +252,31 @@ class _SortRow extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(18, 2, 10, 0),
+          padding: const EdgeInsets.fromLTRB(16, 2, 12, 6),
           child: Row(
             children: [
-              Text(
-                totalCount > 0
-                    ? l('browse.resultCount', {'n': totalCount})
-                    : '',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
+              if (totalCount > 0) ...[
+                Icon(
+                  Icons.inventory_2_outlined,
+                  size: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  l('browse.resultCount', {'n': totalCount}),
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ],
               const Spacer(),
               TextButton.icon(
                 onPressed: onToggleSort,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                ),
                 icon: Icon(
                   sort == SortDirection.desc
                       ? Icons.south_rounded

@@ -60,16 +60,51 @@ class _BackupScreenState extends State<BackupScreen> {
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return PlayerScaffold(
       appBar: AppBar(title: Text(l('backup.title'))),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text(l('backup.hint')),
-          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: scheme.outlineVariant.withValues(alpha: 0.45),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    Icons.import_export_rounded,
+                    color: scheme.primary,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(l('backup.title'), style: theme.textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text(
+                  l('backup.hint'),
+                  style: theme.textTheme.bodySmall?.copyWith(height: 1.55),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
           FilledButton.icon(
             onPressed: _busy ? null : () => _run(false),
-            icon: const Icon(Icons.upload_file),
+            icon: const Icon(Icons.upload_file_rounded),
             label: Text(l('backup.export')),
           ),
           const SizedBox(height: 12),
@@ -78,7 +113,10 @@ class _BackupScreenState extends State<BackupScreen> {
             icon: const Icon(Icons.file_download_outlined),
             label: Text(l('backup.import')),
           ),
-          if (_busy) const LinearProgressIndicator(),
+          if (_busy) ...[
+            const SizedBox(height: 16),
+            const LinearProgressIndicator(),
+          ],
         ],
       ),
     );

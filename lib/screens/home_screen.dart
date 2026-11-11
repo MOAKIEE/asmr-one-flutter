@@ -148,20 +148,33 @@ class _HomeHeader extends StatelessWidget {
   final VoidCallback onBrowseAll;
   final bool loadingRandom;
 
+  AppLang _langOf(BuildContext context) {
+    switch (Localizations.localeOf(context).languageCode) {
+      case 'ja':
+        return AppLang.ja;
+      case 'en':
+        return AppLang.en;
+      default:
+        return AppLang.zh;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final topPadding = MediaQuery.paddingOf(context).top;
-
+    final lang = _langOf(context);
     final hotTags = FeaturedTags.resolve();
 
     return Container(
-      padding: EdgeInsets.fromLTRB(20, topPadding + 22, 20, 20),
+      margin: EdgeInsets.fromLTRB(16, topPadding + 12, 16, 4),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
       decoration: BoxDecoration(
         gradient: AppDecor.heroGradient(scheme),
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(30)),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: AppDecor.softShadow(theme.brightness),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -171,7 +184,7 @@ class _HomeHeader extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: scheme.onPrimary.withValues(alpha: 0.16),
+                  color: scheme.onPrimary.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(
@@ -181,33 +194,45 @@ class _HomeHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 11),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    l('app.name'),
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: scheme.onPrimary,
-                      fontWeight: FontWeight.w800,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l('app.name'),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: scheme.onPrimary,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                  Text(
-                    l('app.tagline'),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: scheme.onPrimary.withValues(alpha: 0.8),
+                    Text(
+                      l('app.tagline'),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onPrimary.withValues(alpha: 0.82),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              const Spacer(),
+              IconButton(
+                tooltip: l('tag.browse'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const TagBrowseScreen()),
+                ),
+                style: IconButton.styleFrom(
+                  backgroundColor: scheme.onPrimary.withValues(alpha: 0.14),
+                  foregroundColor: scheme.onPrimary,
+                ),
+                icon: const Icon(Icons.sell_outlined, size: 19),
+              ),
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 18),
           Text(
             l('home.greeting'),
             style: theme.textTheme.headlineSmall?.copyWith(
               color: scheme.onPrimary,
-              fontSize: 25,
+              fontSize: 23,
             ),
           ),
           const SizedBox(height: 16),
@@ -219,12 +244,19 @@ class _HomeHeader extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: scheme.onPrimary,
                     foregroundColor: scheme.primary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                   ),
                   icon: loadingRandom
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: scheme.primary,
+                          ),
                         )
                       : const Icon(Icons.shuffle_rounded, size: 18),
                   label: Text(l('home.random')),
@@ -236,8 +268,13 @@ class _HomeHeader extends StatelessWidget {
                   onPressed: onBrowseAll,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: scheme.onPrimary,
+                    backgroundColor: scheme.onPrimary.withValues(alpha: 0.1),
                     side: BorderSide(
-                      color: scheme.onPrimary.withValues(alpha: 0.5),
+                      color: scheme.onPrimary.withValues(alpha: 0.45),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
                     ),
                   ),
                   icon: const Icon(Icons.grid_view_rounded, size: 18),
@@ -246,9 +283,9 @@ class _HomeHeader extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           SizedBox(
-            height: 34,
+            height: 32,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: hotTags.length,
@@ -256,8 +293,13 @@ class _HomeHeader extends StatelessWidget {
               itemBuilder: (context, i) {
                 final tag = hotTags[i];
                 return Material(
-                  color: scheme.onPrimary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(999),
+                  color: scheme.onPrimary.withValues(alpha: 0.16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                    side: BorderSide(
+                      color: scheme.onPrimary.withValues(alpha: 0.22),
+                    ),
+                  ),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(999),
                     onTap: () => Navigator.of(context).push(
@@ -268,13 +310,15 @@ class _HomeHeader extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
-                        vertical: 7,
+                        vertical: 6,
                       ),
-                      child: Text(
-                        '# ${tag.label(AppLang.zh)}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: scheme.onPrimary,
-                          fontWeight: FontWeight.w600,
+                      child: Center(
+                        child: Text(
+                          '# ${tag.label(lang)}',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: scheme.onPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),

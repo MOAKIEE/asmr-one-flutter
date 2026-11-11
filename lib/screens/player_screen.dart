@@ -78,8 +78,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: Column(
                 children: [
                   const Spacer(flex: 2),
-                  SizedBox(
+                  Container(
                     height: MediaQuery.sizeOf(context).height * 0.34,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.32),
+                          blurRadius: 28,
+                          offset: const Offset(0, 12),
+                        ),
+                      ],
+                    ),
                     child: CoverImage(
                       url: item.coverUrl,
                       seedId: item.workId,

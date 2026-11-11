@@ -177,81 +177,128 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
             if (player.currentItem == null) {
               return Center(child: Text(l('player.nothing')));
             }
+            final scheme = Theme.of(context).colorScheme;
             return Column(
               children: [
-                Padding(
+                Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 8,
                   ),
-                  child: Text(
-                    player.currentItem!.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  color: scheme.surfaceContainerLow,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.music_note_rounded,
+                        size: 16,
+                        color: scheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          player.currentItem!.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: scheme.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                if (_busy || _notes.loading) const LinearProgressIndicator(),
-                if (_notes.error != null) Text(_notes.error!),
+                if (_busy || _notes.loading)
+                  const LinearProgressIndicator(minHeight: 2),
+                if (_notes.error != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    child: Text(
+                      _notes.error!,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.error,
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: TabBarView(
                     children: [_subtitles(player, l), _bookmarks(player, l)],
                   ),
                 ),
-                SafeArea(
-                  top: false,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 4,
-                        children: [
-                          TextButton(
-                            onPressed: player.markLoopStart,
-                            child: Text(
-                              'A ${player.loopStart == null ? "—" : Fmt.position(player.loopStart!)}',
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              if (!player.markLoopEnd()) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(l('notes.invalidLoop')),
-                                  ),
-                                );
-                              }
-                            },
-                            child: Text(
-                              'B ${player.loopEnd == null ? "—" : Fmt.position(player.loopEnd!)}',
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: player.clearAbLoop,
-                            child: Text(l('notes.clearLoop')),
-                          ),
-                        ],
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerLow,
+                    border: Border(
+                      top: BorderSide(
+                        color: scheme.outlineVariant.withValues(alpha: 0.45),
                       ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          IconButton(
-                            onPressed: player.previous,
-                            icon: const Icon(Icons.skip_previous),
-                          ),
-                          IconButton(
-                            onPressed: player.toggle,
-                            icon: Icon(
-                              player.playing ? Icons.pause : Icons.play_arrow,
+                    ),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 4,
+                          children: [
+                            TextButton(
+                              onPressed: player.markLoopStart,
+                              child: Text(
+                                'A ${player.loopStart == null ? "—" : Fmt.position(player.loopStart!)}',
+                              ),
                             ),
-                          ),
-                          IconButton(
-                            onPressed: player.hasNext ? player.next : null,
-                            icon: const Icon(Icons.skip_next),
-                          ),
-                        ],
-                      ),
-                    ],
+                            TextButton(
+                              onPressed: () {
+                                if (!player.markLoopEnd()) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(l('notes.invalidLoop')),
+                                    ),
+                                  );
+                                }
+                              },
+                              child: Text(
+                                'B ${player.loopEnd == null ? "—" : Fmt.position(player.loopEnd!)}',
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: player.clearAbLoop,
+                              child: Text(l('notes.clearLoop')),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              onPressed: player.previous,
+                              icon: const Icon(Icons.skip_previous_rounded),
+                            ),
+                            IconButton(
+                              onPressed: player.toggle,
+                              color: scheme.primary,
+                              icon: Icon(
+                                player.playing
+                                    ? Icons.pause_circle_filled_rounded
+                                    : Icons.play_circle_fill_rounded,
+                                size: 30,
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: player.hasNext ? player.next : null,
+                              icon: const Icon(Icons.skip_next_rounded),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],

@@ -6,12 +6,15 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:asmr_one/core/models/track.dart';
 import 'package:asmr_one/core/models/work.dart';
 import 'package:asmr_one/core/storage/library_db.dart';
+import 'package:asmr_one/core/storage/app_prefs.dart';
 import 'package:asmr_one/state/download_state.dart';
 import 'package:asmr_one/state/library_state.dart';
+import 'package:asmr_one/state/settings_state.dart';
 import 'package:asmr_one/screens/downloads_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DownloadLibrary extends ChangeNotifier implements LibraryState {
   final rows = <DownloadRow>[];
@@ -146,6 +149,8 @@ void main() {
   testWidgets('downloaded work has play button without favorites or history', (
     tester,
   ) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsState(await AppPrefs.load());
     final library = DownloadLibrary();
     library.rows.add(
       DownloadRow(
@@ -162,13 +167,16 @@ void main() {
         providers: [
           ChangeNotifierProvider<LibraryState>.value(value: library),
           ChangeNotifierProvider<DownloadState>.value(value: state),
+          ChangeNotifierProvider<SettingsState>.value(value: settings),
         ],
         child: const MaterialApp(home: DownloadsScreen()),
       ),
     );
     expect(find.text('Offline work'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
+    settings.dispose();
     state.dispose();
     library.dispose();
   });

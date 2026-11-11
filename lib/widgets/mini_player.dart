@@ -19,12 +19,17 @@ class MiniPlayer extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Material(
         color: scheme.surfaceContainerHigh.withValues(alpha: 0.97),
-        borderRadius: BorderRadius.circular(18),
-        elevation: 10,
-        shadowColor: Colors.black.withValues(alpha: 0.35),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(
+            color: scheme.outlineVariant.withValues(alpha: 0.55),
+          ),
+        ),
+        elevation: 8,
+        shadowColor: Colors.black.withValues(alpha: 0.3),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => Navigator.of(context)

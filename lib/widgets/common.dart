@@ -61,29 +61,40 @@ class _CoverImageState extends State<CoverImage> {
       );
     }
 
-    final child = ClipRRect(
-      borderRadius: BorderRadius.circular(widget.radius),
-      child: AspectRatio(
-        aspectRatio: widget.aspectRatio,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            image,
-            if (shouldBlur)
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.28),
+    final child = Container(
+      decoration: widget.radius > 0
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(widget.radius),
+              border: Border.all(
+                color: scheme.outlineVariant.withValues(alpha: 0.25),
+                width: 0.6,
+              ),
+            )
+          : null,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(widget.radius),
+        child: AspectRatio(
+          aspectRatio: widget.aspectRatio,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              image,
+              if (shouldBlur)
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.28),
+                    ),
                   ),
                 ),
-              ),
-            if (shouldBlur && widget.showRevealButton)
-              Center(
-                child: _RevealButton(
-                  onTap: () => setState(() => _revealed = true),
+              if (shouldBlur && widget.showRevealButton)
+                Center(
+                  child: _RevealButton(
+                    onTap: () => setState(() => _revealed = true),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -281,17 +292,25 @@ class EmptyView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 46,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHigh.withValues(alpha: 0.65),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                size: 36,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium
-                  ?.copyWith(color: scheme.onSurfaceVariant),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
             ),
             if (action != null) ...[const SizedBox(height: 18), action!],
           ],
@@ -334,6 +353,49 @@ class LoadMoreIndicator extends StatelessWidget {
   }
 }
 
+/// 统一圆角分组卡片（基于 Material，确保内部 ListTile / InkWell 水波纹正常渲染）。
+class AppGroupCard extends StatelessWidget {
+  const AppGroupCard({
+    super.key,
+    required this.child,
+    this.margin,
+    this.padding,
+    this.radius = 20,
+    this.color,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry? margin;
+  final EdgeInsetsGeometry? padding;
+  final double radius;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    Widget content = child;
+    if (padding != null) {
+      content = Padding(padding: padding!, child: content);
+    }
+    Widget box = Material(
+      color: color ?? scheme.surfaceContainerLow,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(radius),
+        side: BorderSide(
+          color: scheme.outlineVariant.withValues(alpha: 0.45),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: content,
+    );
+    if (margin != null) {
+      box = Padding(padding: margin!, child: box);
+    }
+    return box;
+  }
+}
+
 /// 小节标题，右侧可带一个操作按钮。
 class SectionHeader extends StatelessWidget {
   const SectionHeader({
@@ -354,13 +416,21 @@ class SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 8, 10),
+      padding: const EdgeInsets.fromLTRB(16, 20, 10, 10),
       child: Row(
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 20, color: theme.colorScheme.primary),
-            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Icon(icon, size: 17, color: scheme.primary),
+            ),
+            const SizedBox(width: 10),
           ],
           Expanded(
             child: Column(
@@ -378,6 +448,13 @@ class SectionHeader extends StatelessWidget {
           if (onAction != null)
             TextButton(
               onPressed: onAction,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -430,21 +507,51 @@ class RatingBadge extends StatelessWidget {
 
 /// 18 禁 / 全年龄角标。
 class AgeBadge extends StatelessWidget {
-  const AgeBadge({super.key, required this.nsfw, this.label});
+  const AgeBadge({
+    super.key,
+    required this.nsfw,
+    this.label,
+    this.overlay = false,
+  });
 
   final bool nsfw;
   final String? label;
 
+  /// 是否叠加在封面图之上（使用深色半透明底保证可读性）。
+  final bool overlay;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    if (overlay) {
+      final bg = nsfw
+          ? const Color(0xE0D9385A)
+          : Colors.black.withValues(alpha: 0.62);
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Text(
+          label ?? (nsfw ? 'R18' : 'ALL'),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            fontSize: 10,
+            height: 1.1,
+          ),
+        ),
+      );
+    }
+
     final color = nsfw ? const Color(0xFFE05B6B) : scheme.tertiary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.18),
+        color: color.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.45), width: 0.8),
+        border: Border.all(color: color.withValues(alpha: 0.42), width: 0.8),
       ),
       child: Text(
         label ?? (nsfw ? 'R18' : 'ALL'),

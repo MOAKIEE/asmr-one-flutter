@@ -158,9 +158,9 @@ class AppTheme {
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: scheme.surfaceContainerLow,
         surfaceTintColor: Colors.transparent,
-        indicatorColor: scheme.primary.withValues(alpha: 0.18),
+        indicatorColor: scheme.primary.withValues(alpha: 0.16),
         elevation: 0,
-        height: 68,
+        height: 66,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => text.labelSmall?.copyWith(
@@ -174,11 +174,30 @@ class AppTheme {
         ),
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
-            size: 24,
+            size: 23,
             color: states.contains(WidgetState.selected)
                 ? scheme.primary
                 : scheme.onSurfaceVariant,
           ),
+        ),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          side: WidgetStatePropertyAll(
+            BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.7)),
+          ),
+        ),
+      ),
+      tabBarTheme: TabBarThemeData(
+        dividerColor: scheme.outlineVariant.withValues(alpha: 0.4),
+        indicatorSize: TabBarIndicatorSize.label,
+        labelStyle: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+        unselectedLabelStyle: text.titleSmall?.copyWith(
+          fontWeight: FontWeight.w500,
         ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
@@ -308,21 +327,28 @@ class AppDecor {
   static const double radiusCard = 20;
   static const double radiusSheet = 28;
 
-  /// 主色系渐变，用于首页头部与播放器背景。
-  static LinearGradient heroGradient(ColorScheme scheme) => LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [
-      scheme.primary.withValues(alpha: 0.85),
-      Color.lerp(
-        scheme.primary,
-        scheme.tertiary,
-        0.55,
-      )!.withValues(alpha: 0.75),
-      scheme.surface.withValues(alpha: 0.0),
-    ],
-    stops: const [0.0, 0.55, 1.0],
-  );
+  /// 主色系渐变，用于首页头部与登录/账号橫幅，确保文字对比度一致。
+  static LinearGradient heroGradient(ColorScheme scheme) {
+    final start = scheme.primary;
+    final mid = Color.lerp(scheme.primary, scheme.tertiary, 0.45)!;
+    final end = Color.lerp(scheme.primary, scheme.secondary, 0.72)!;
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [start, mid, end],
+      stops: const [0.0, 0.55, 1.0],
+    );
+  }
+
+  /// 分组容器装饰（用于设置页、我的页列表组、详情信息卡等）。
+  static BoxDecoration groupBox(ColorScheme scheme, {double radius = 20}) =>
+      BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.45),
+        ),
+      );
 
   /// 封面占位渐变，在图片加载完成前显示。
   static LinearGradient placeholderGradient(ColorScheme scheme, int seedId) {
@@ -338,7 +364,13 @@ class AppDecor {
 
   static List<BoxShadow> softShadow(Brightness brightness) =>
       brightness == Brightness.dark
-      ? const []
+      ? [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ]
       : [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.06),

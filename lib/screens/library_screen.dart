@@ -9,6 +9,7 @@ import '../state/auth_state.dart';
 import '../state/download_state.dart';
 import '../state/library_state.dart';
 import '../state/settings_state.dart';
+import '../widgets/common.dart';
 import 'downloads_screen.dart';
 import 'library_lists.dart';
 import 'login_screen.dart';
@@ -61,7 +62,7 @@ class LibraryScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _AccountCard(auth: auth),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -71,6 +72,9 @@ class LibraryScreen extends StatelessWidget {
                   value: '${library.favoriteCount}',
                   icon: Icons.favorite_rounded,
                   color: const Color(0xFFFF6FB5),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 _StatCard(
@@ -78,6 +82,9 @@ class LibraryScreen extends StatelessWidget {
                   value: '${library.history.length}',
                   icon: Icons.history_rounded,
                   color: const Color(0xFF4FC3F7),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const HistoryScreen()),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 _StatCard(
@@ -87,61 +94,78 @@ class LibraryScreen extends StatelessWidget {
                       : Fmt.size(library.downloadBytes),
                   icon: Icons.download_rounded,
                   color: const Color(0xFF3DDC97),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const DownloadsScreen()),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          AppGroupCard(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                _MenuTile(
+                  icon: Icons.favorite_border_rounded,
+                  title: l('library.favorites'),
+                  subtitle: '${library.favoriteCount}',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+                  ),
+                ),
+                const Divider(indent: 62, endIndent: 16),
+                _MenuTile(
+                  icon: Icons.history_rounded,
+                  title: l('library.history'),
+                  subtitle: '${library.history.length}',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const HistoryScreen()),
+                  ),
+                ),
+                const Divider(indent: 62, endIndent: 16),
+                _MenuTile(
+                  icon: Icons.playlist_play_rounded,
+                  title: l('library.playlists'),
+                  subtitle: auth.hasToken
+                      ? '${auth.playlists.length + library.localPlaylists.length}'
+                      : '${library.localPlaylists.length}',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const PlaylistListScreen(),
+                    ),
+                  ),
+                ),
+                const Divider(indent: 62, endIndent: 16),
+                _MenuTile(
+                  icon: Icons.download_outlined,
+                  title: l('library.downloads'),
+                  subtitle: library.downloads.isEmpty
+                      ? ''
+                      : Fmt.size(library.downloadBytes),
+                  badge: activeDownloads > 0 ? '$activeDownloads' : null,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const DownloadsScreen()),
+                  ),
+                ),
+                const Divider(indent: 62, endIndent: 16),
+                _MenuTile(
+                  icon: Icons.settings_outlined,
+                  title: l('settings.title'),
+                  subtitle: settings.autoSelectLine
+                      ? l('settings.lineAuto')
+                      : settings.currentHost,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 20),
-          _MenuTile(
-            icon: Icons.favorite_border_rounded,
-            title: l('library.favorites'),
-            subtitle: '${library.favoriteCount}',
-            onTap: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const FavoritesScreen())),
-          ),
-          _MenuTile(
-            icon: Icons.history_rounded,
-            title: l('library.history'),
-            subtitle: '${library.history.length}',
-            onTap: () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const HistoryScreen())),
-          ),
-          _MenuTile(
-            icon: Icons.playlist_play_rounded,
-            title: l('library.playlists'),
-            subtitle: auth.hasToken
-                ? '${auth.playlists.length + library.localPlaylists.length}'
-                : '${library.localPlaylists.length}',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PlaylistListScreen()),
-            ),
-          ),
-          _MenuTile(
-            icon: Icons.download_outlined,
-            title: l('library.downloads'),
-            subtitle: library.downloads.isEmpty
-                ? ''
-                : Fmt.size(library.downloadBytes),
-            badge: activeDownloads > 0 ? '$activeDownloads' : null,
-            onTap: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const DownloadsScreen())),
-          ),
-          _MenuTile(
-            icon: Icons.settings_outlined,
-            title: l('settings.title'),
-            subtitle: settings.autoSelectLine
-                ? l('settings.lineAuto')
-                : settings.currentHost,
-            onTap: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
-          ),
-          const SizedBox(height: 8),
           Center(
             child: Text(
-              '${l('settings.version')} 1.0.0 · ${ApiClient.instance.baseUrlHost}',
+              '${l('settings.version')} 1.1.0 · ${ApiClient.instance.baseUrlHost}',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
@@ -296,44 +320,53 @@ class _StatCard extends StatelessWidget {
     required this.value,
     required this.icon,
     required this.color,
+    this.onTap,
   });
 
   final String label;
   final String value;
   final IconData icon;
   final Color color;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
+      child: Material(
+        color: color.withValues(alpha: 0.12),
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: color.withValues(alpha: 0.28)),
+          side: BorderSide(color: color.withValues(alpha: 0.28)),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 19, color: color),
-            const SizedBox(height: 9),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, size: 19, color: color),
+                const SizedBox(height: 9),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall,
+                ),
+              ],
             ),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall,
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -358,44 +391,43 @@ class _MenuTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      child: ListTile(
-        leading: Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color: scheme.primary.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, size: 19, color: scheme.primary),
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+      shape: const RoundedRectangleBorder(),
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
         ),
-        title: Text(title),
-        subtitle: (subtitle ?? '').isEmpty ? null : Text(subtitle!),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (badge != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: scheme.primary,
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: Text(
-                  badge!,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: scheme.onPrimary,
-                    fontWeight: FontWeight.w800,
-                  ),
+        child: Icon(icon, size: 19, color: scheme.primary),
+      ),
+      title: Text(title),
+      subtitle: (subtitle ?? '').isEmpty ? null : Text(subtitle!),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (badge != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: scheme.primary,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(
+                badge!,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: scheme.onPrimary,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-            const SizedBox(width: 6),
-            const Icon(Icons.chevron_right_rounded, size: 20),
-          ],
-        ),
-        onTap: onTap,
+            ),
+          const SizedBox(width: 6),
+          const Icon(Icons.chevron_right_rounded, size: 20),
+        ],
       ),
+      onTap: onTap,
     );
   }
 }

@@ -171,15 +171,27 @@ class _Suggestions extends StatelessWidget {
 
   final void Function(String keyword) onSelect;
 
+  AppLang _langOf(BuildContext context) {
+    switch (Localizations.localeOf(context).languageCode) {
+      case 'ja':
+        return AppLang.ja;
+      case 'en':
+        return AppLang.en;
+      default:
+        return AppLang.zh;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
     final settings = context.watch<SettingsState>();
     final history = settings.searchHistory;
     final hotTags = FeaturedTags.resolve();
+    final lang = _langOf(context);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 32),
       children: [
         if (history.isNotEmpty) ...[
           SectionHeader(
@@ -188,47 +200,46 @@ class _Suggestions extends StatelessWidget {
             action: l('search.clearHistory'),
             onAction: settings.clearSearchHistory,
           ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final h in history)
-                InputChip(
-                  label: Text(h),
-                  onPressed: () => onSelect(h),
-                  onDeleted: () => settings.removeSearchHistory(h),
-                  deleteIcon: const Icon(Icons.close_rounded, size: 15),
-                  visualDensity: VisualDensity.compact,
-                ),
-            ],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final h in history)
+                  InputChip(
+                    label: Text(h),
+                    onPressed: () => onSelect(h),
+                    onDeleted: () => settings.removeSearchHistory(h),
+                    deleteIcon: const Icon(Icons.close_rounded, size: 15),
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
         ],
         SectionHeader(
           title: l('search.hotTags'),
           icon: Icons.local_fire_department_rounded,
         ),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final tag in hotTags)
-              ActionChip(
-                label: Text(tag.label(AppLang.zh)),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => TagBrowseScreen(initialTag: tag),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final tag in hotTags)
+                ActionChip(
+                  label: Text('# ${tag.label(lang)}'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => TagBrowseScreen(initialTag: tag),
+                    ),
                   ),
+                  visualDensity: VisualDensity.compact,
                 ),
-                visualDensity: VisualDensity.compact,
-              ),
-          ],
-        ),
-        const SizedBox(height: 20),
-        Center(
-          child: Text(
-            l('search.hint'),
-            style: Theme.of(context).textTheme.labelSmall,
+            ],
           ),
         ),
       ],
