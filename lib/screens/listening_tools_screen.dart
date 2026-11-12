@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../state/library_state.dart';
 import '../state/listening_notes.dart';
 import '../state/player_state.dart';
+import '../widgets/common.dart';
 
 class ListeningToolsScreen extends StatefulWidget {
   const ListeningToolsScreen({super.key});
@@ -220,9 +221,8 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
                     ),
                     child: Text(
                       _notes.error!,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.error,
-                      ),
+                      style: Theme.of(context).textTheme.labelSmall
+                          ?.copyWith(color: scheme.error),
                     ),
                   ),
                 Expanded(
@@ -311,47 +311,66 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
 
   Widget _bookmarks(PlayerState player, L10n l) => Column(
     children: [
-      FilledButton.icon(
-        onPressed: _busy || _notes.loading ? null : () => _bookmark(),
-        icon: const Icon(Icons.bookmark_add_outlined),
-        label: Text(l('notes.addBookmark')),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _busy || _notes.loading ? null : () => _bookmark(),
+            icon: const Icon(Icons.bookmark_add_outlined),
+            label: Text(l('notes.addBookmark')),
+          ),
+        ),
       ),
       Expanded(
         child: _notes.bookmarks.isEmpty
             ? Center(child: Text(l('notes.emptyBookmarks')))
             : ListView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
                 children: [
                   for (final bookmark in _notes.bookmarks)
-                    ListTile(
-                      leading: Text(
-                        Fmt.position(
+                    AppGroupCard(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        subtitle: Text(
+                          Fmt.position(
+                            Duration(milliseconds: bookmark.positionMs),
+                          ),
+                        ),
+                        title: Text(
+                          bookmark.note.isEmpty
+                              ? l('notes.bookmark')
+                              : bookmark.note,
+                        ),
+                        onTap: () => player.seek(
                           Duration(milliseconds: bookmark.positionMs),
                         ),
-                      ),
-                      title: Text(
-                        bookmark.note.isEmpty
-                            ? l('notes.bookmark')
-                            : bookmark.note,
-                      ),
-                      onTap: () => player.seek(
-                        Duration(milliseconds: bookmark.positionMs),
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            onPressed: _busy ? null : () => _bookmark(bookmark),
-                            icon: const Icon(Icons.edit_outlined),
-                          ),
-                          IconButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _run(
-                                    () => _notes.editBookmark(bookmark, null),
-                                  ),
-                            icon: const Icon(Icons.delete_outline),
-                          ),
-                        ],
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _bookmark(bookmark),
+                              icon: const Icon(Icons.edit_outlined),
+                            ),
+                            IconButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _run(
+                                      () => _notes.editBookmark(bookmark, null),
+                                    ),
+                              icon: const Icon(Icons.delete_outline),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                 ],
@@ -362,59 +381,87 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
 
   Widget _subtitles(PlayerState player, L10n l) => Column(
     children: [
-      Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 8,
-        children: [
-          TextButton.icon(
-            onPressed: _busy || _notes.loading ? null : () => _run(_import),
-            icon: const Icon(Icons.file_open_outlined),
-            label: Text(l('notes.importSubtitle')),
+      AppGroupCard(
+        margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: ExpansionTile(
+          key: ValueKey(_notes.cues.isEmpty),
+          initiallyExpanded: _notes.cues.isEmpty,
+          shape: const Border(),
+          collapsedShape: const Border(),
+          leading: const Icon(Icons.subtitles_outlined),
+          title: Text(
+            _notes.cues.isEmpty
+                ? l('notes.importSubtitle')
+                : _notes.subtitleName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleSmall,
           ),
-          TextButton.icon(
-            onPressed: _busy || _notes.loading ? null : () => _run(_online),
-            icon: const Icon(Icons.cloud_download_outlined),
-            label: Text(l('notes.onlineSubtitle')),
-          ),
-          if (_notes.cues.isNotEmpty)
-            IconButton(
-              onPressed: _busy ? null : () => _run(_notes.removeSubtitle),
-              icon: const Icon(Icons.close),
-            ),
-        ],
-      ),
-      if (_notes.cues.isNotEmpty) ...[
-        Text(_notes.subtitleName, maxLines: 1, overflow: TextOverflow.ellipsis),
-        Wrap(
-          alignment: WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           children: [
-            IconButton(
-              onPressed: _busy
-                  ? null
-                  : () => _run(() => _notes.setOffset(_notes.offsetMs - 500)),
-              icon: const Icon(Icons.remove),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              children: [
+                TextButton.icon(
+                  onPressed: _busy || _notes.loading
+                      ? null
+                      : () => _run(_import),
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: Text(l('notes.importSubtitle')),
+                ),
+                TextButton.icon(
+                  onPressed: _busy || _notes.loading
+                      ? null
+                      : () => _run(_online),
+                  icon: const Icon(Icons.cloud_download_outlined),
+                  label: Text(l('notes.onlineSubtitle')),
+                ),
+                if (_notes.cues.isNotEmpty)
+                  IconButton(
+                    onPressed: _busy ? null : () => _run(_notes.removeSubtitle),
+                    icon: const Icon(Icons.close),
+                  ),
+              ],
             ),
-            Text(
-              '${l('notes.offset')} ${(_notes.offsetMs / 1000).toStringAsFixed(1)}s',
-            ),
-            IconButton(
-              onPressed: _busy
-                  ? null
-                  : () => _run(() => _notes.setOffset(_notes.offsetMs + 500)),
-              icon: const Icon(Icons.add),
-            ),
-            FilterChip(
-              label: Text(l('notes.follow')),
-              selected: _follow,
-              onSelected: (v) => setState(() {
-                _follow = v;
-                _lastActive = -1;
-              }),
-            ),
+            if (_notes.cues.isNotEmpty) ...[
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  IconButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _run(
+                            () => _notes.setOffset(_notes.offsetMs - 500),
+                          ),
+                    icon: const Icon(Icons.remove),
+                  ),
+                  Text(
+                    '${l('notes.offset')} ${(_notes.offsetMs / 1000).toStringAsFixed(1)}s',
+                  ),
+                  IconButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _run(
+                            () => _notes.setOffset(_notes.offsetMs + 500),
+                          ),
+                    icon: const Icon(Icons.add),
+                  ),
+                  FilterChip(
+                    label: Text(l('notes.follow')),
+                    selected: _follow,
+                    onSelected: (v) => setState(() {
+                      _follow = v;
+                      _lastActive = -1;
+                    }),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
-      ],
+      ),
       Expanded(
         child: _notes.cues.isEmpty
             ? Center(
@@ -426,6 +473,8 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
             : StreamBuilder<Duration>(
                 stream: player.player.positionStream,
                 builder: (context, snapshot) {
+                  final extent =
+                      56 + MediaQuery.textScalerOf(context).scale(16) * 4.5;
                   final active = Subtitles.activeIndex(
                     _notes.cues,
                     (snapshot.data ?? player.player.position).inMilliseconds,
@@ -436,7 +485,7 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted && _scroll.hasClients) {
                         _scroll.animateTo(
-                          (active * 88.0 - 88).clamp(
+                          (active * extent - extent).clamp(
                             0,
                             _scroll.position.maxScrollExtent,
                           ),
@@ -448,28 +497,71 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
                   }
                   return ListView.builder(
                     controller: _scroll,
-                    itemExtent: 88,
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                    itemExtent: extent,
                     itemCount: _notes.cues.length,
                     itemBuilder: (context, i) {
                       final cue = _notes.cues[i];
-                      return ListTile(
-                        selected: i == active,
-                        selectedTileColor: Theme.of(context)
-                            .colorScheme
-                            .primaryContainer,
-                        leading: Text(
-                          Fmt.position(Duration(milliseconds: cue.startMs)),
-                        ),
-                        title: Text(
-                          cue.text,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        onTap: () => player.seek(
-                          Duration(
-                            milliseconds: (cue.startMs + _notes.offsetMs).clamp(
-                              0,
-                              1 << 40,
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Material(
+                          color: i == active
+                              ? Theme.of(context).colorScheme.primaryContainer
+                              : Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(18),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () => player.seek(
+                              Duration(
+                                milliseconds: (cue.startMs + _notes.offsetMs)
+                                    .clamp(0, 1 << 40),
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    Fmt.position(
+                                      Duration(milliseconds: cue.startMs),
+                                    ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Expanded(
+                                    child: Text(
+                                      cue.text,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        height: 1.5,
+                                        color: i == active
+                                            ? Theme.of(context)
+                                                  .colorScheme
+                                                  .onPrimaryContainer
+                                            : Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
