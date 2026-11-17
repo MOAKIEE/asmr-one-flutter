@@ -41,7 +41,7 @@ class PlaylistListScreen extends StatelessWidget {
             SectionHeader(
               title: l('playlist.mine'),
               icon: Icons.cloud_outlined,
-              action: l('common.reset'),
+              action: l('common.refresh'),
               onAction: () => auth.loadPlaylists(force: true),
             ),
             if (auth.playlists.isEmpty)
@@ -274,112 +274,210 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
               message: l('playlist.empty'),
               icon: Icons.playlist_remove_rounded,
             )
-          : StaticWorkGrid(works: _works, columns: settings.gridColumns),
+          : StaticWorkGrid(
+              works: _works,
+              columns: settings.gridColumns,
+              onLongPress: widget._local == null
+                  ? null
+                  : (work) => _confirmRemoveLocalWork(work),
+            ),
     );
+  }
+
+  Future<void> _confirmRemoveLocalWork(Work work) async {
+    final local = widget._local;
+    if (local == null) return;
+    final l = L10n.of(context);
+    final library = context.read<LibraryState>();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(
+                work.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.playlist_remove_rounded,
+                color: Theme.of(sheetContext).colorScheme.error,
+              ),
+              title: Text(
+                l('playlist.removeWork'),
+                style: TextStyle(
+                  color: Theme.of(sheetContext).colorScheme.error,
+                ),
+              ),
+              onTap: () => Navigator.of(sheetContext).pop(true),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await library.removeFromLocalPlaylist(local.id, work.id);
+    if (!mounted) return;
+    setState(() {
+      _works = _works.where((w) => w.id != work.id).toList();
+    });
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(l('playlist.removed'))));
   }
 }
 
 /// 新建播放列表（云端或本地）。
 Future<void> showCreatePlaylistSheet(BuildContext context) async {
-  final l = L10n.of(context);
-  final auth = context.read<AuthState>();
-  final library = context.read<LibraryState>();
-  final nameController = TextEditingController();
-  final descController = TextEditingController();
-  var privacy = 'private';
-  var cloud = auth.hasToken;
-
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    builder: (sheetContext) {
-      return Padding(
+    useSafeArea: true,
+    builder: (_) => const _CreatePlaylistSheet(),
+  );
+}
+
+class _CreatePlaylistSheet extends StatefulWidget {
+  const _CreatePlaylistSheet();
+
+  @override
+  State<_CreatePlaylistSheet> createState() => _CreatePlaylistSheetState();
+}
+
+class _CreatePlaylistSheetState extends State<_CreatePlaylistSheet> {
+  final _nameController = TextEditingController();
+  final _descController = TextEditingController();
+  String _privacy = 'private';
+  late bool _cloud = context.read<AuthState>().hasToken;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L10n.of(context);
+    final auth = context.read<AuthState>();
+    final library = context.read<LibraryState>();
+
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
         padding: EdgeInsets.only(
           left: 20,
           right: 20,
           top: 8,
-          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
+          bottom: MediaQuery.viewInsetsOf(context).bottom + 20,
         ),
-        child: StatefulBuilder(
-          builder: (context, setState) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  l('playlist.create'),
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: nameController,
-                  autofocus: true,
-                  decoration: InputDecoration(labelText: l('playlist.name')),
-                ),
-                const SizedBox(height: 12),
-                if (cloud) ...[
-                  TextField(
-                    controller: descController,
-                    decoration: InputDecoration(
-                      labelText: l('playlist.description'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l('playlist.create'),
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            if (auth.hasToken) ...[
+              Text(
+                l('playlist.targetType'),
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<bool>(
+                  segments: [
+                    ButtonSegment(
+                      value: true,
+                      label: Text(l('playlist.createCloud')),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    l('playlist.privacy'),
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  SegmentedButton<String>(
-                    segments: [
-                      ButtonSegment(
-                        value: 'private',
-                        label: Text(l('playlist.privacy.private')),
-                      ),
-                      ButtonSegment(
-                        value: 'known',
-                        label: Text(l('playlist.privacy.known')),
-                      ),
-                      ButtonSegment(
-                        value: 'public',
-                        label: Text(l('playlist.privacy.public')),
-                      ),
-                    ],
-                    selected: {privacy},
-                    onSelectionChanged: (s) =>
-                        setState(() => privacy = s.first),
-                  ),
-                ],
-                const SizedBox(height: 22),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () async {
-                      final name = nameController.text.trim();
-                      if (name.isEmpty) return;
-                      if (cloud) {
-                        await auth.createPlaylist(
-                          name: name,
-                          description: descController.text.trim(),
-                          privacy: privacy,
-                        );
-                      } else {
-                        await library.createLocalPlaylist(name);
-                      }
-                      if (sheetContext.mounted) {
-                        Navigator.of(sheetContext).pop();
-                      }
-                    },
-                    child: Text(l('common.create')),
-                  ),
+                    ButtonSegment(
+                      value: false,
+                      label: Text(l('playlist.createLocal')),
+                    ),
+                  ],
+                  selected: {_cloud},
+                  onSelectionChanged: (s) => setState(() => _cloud = s.first),
                 ),
-              ],
-            );
-          },
+              ),
+              const SizedBox(height: 14),
+            ],
+            TextField(
+              controller: _nameController,
+              autofocus: true,
+              decoration: InputDecoration(labelText: l('playlist.name')),
+            ),
+            const SizedBox(height: 12),
+            if (_cloud) ...[
+              TextField(
+                controller: _descController,
+                decoration: InputDecoration(
+                  labelText: l('playlist.description'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                l('playlist.privacy'),
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<String>(
+                  segments: [
+                    ButtonSegment(
+                      value: 'private',
+                      label: Text(l('playlist.privacy.private')),
+                    ),
+                    ButtonSegment(
+                      value: 'known',
+                      label: Text(l('playlist.privacy.known')),
+                    ),
+                    ButtonSegment(
+                      value: 'public',
+                      label: Text(l('playlist.privacy.public')),
+                    ),
+                  ],
+                  selected: {_privacy},
+                  onSelectionChanged: (s) =>
+                      setState(() => _privacy = s.first),
+                ),
+              ),
+            ],
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () async {
+                  final name = _nameController.text.trim();
+                  if (name.isEmpty) return;
+                  if (_cloud) {
+                    await auth.createPlaylist(
+                      name: name,
+                      description: _descController.text.trim(),
+                      privacy: _privacy,
+                    );
+                  } else {
+                    await library.createLocalPlaylist(name);
+                  }
+                  if (context.mounted) Navigator.of(context).pop();
+                },
+                child: Text(l('common.create')),
+              ),
+            ),
+          ],
         ),
-      );
-    },
-  );
+      ),
+    );
+  }
 }
 
 /// 「加入播放列表」选择面板。

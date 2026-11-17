@@ -8,7 +8,6 @@ import '../l10n/app_localizations.dart';
 import '../state/auth_state.dart';
 import '../state/download_state.dart';
 import '../state/library_state.dart';
-import '../state/settings_state.dart';
 import '../widgets/common.dart';
 import 'downloads_screen.dart';
 import 'library_lists.dart';
@@ -26,18 +25,19 @@ class LibraryScreen extends StatelessWidget {
     final auth = context.watch<AuthState>();
     final library = context.watch<LibraryState>();
     final downloads = context.watch<DownloadState>();
-    final settings = context.watch<SettingsState>();
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
     final activeDownloads = downloads.activeCount;
+    final extraPad = (AppLayout.horizontalInset(context, maxWidth: 680) - 16)
+        .clamp(0.0, double.infinity);
 
     return Scaffold(
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          0,
+          extraPad,
           MediaQuery.paddingOf(context).top + 16,
-          0,
+          extraPad,
           32,
         ),
         children: [
@@ -146,17 +146,6 @@ class LibraryScreen extends StatelessWidget {
                   badge: activeDownloads > 0 ? '$activeDownloads' : null,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const DownloadsScreen()),
-                  ),
-                ),
-                const Divider(indent: 62, endIndent: 16),
-                _MenuTile(
-                  icon: Icons.settings_outlined,
-                  title: l('settings.title'),
-                  subtitle: settings.autoSelectLine
-                      ? l('settings.lineAuto')
-                      : settings.currentHost,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
                   ),
                 ),
               ],

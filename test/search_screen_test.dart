@@ -2,11 +2,14 @@ import 'package:asmr_one/core/api/api_client.dart';
 import 'package:asmr_one/core/models/work.dart';
 import 'package:asmr_one/core/storage/app_prefs.dart';
 import 'package:asmr_one/screens/search_screen.dart';
+import 'package:asmr_one/state/library_state.dart';
 import 'package:asmr_one/state/settings_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'download_state_test.dart' show DownloadLibrary;
 
 class SearchApi implements ApiClient {
   final keywords = <String>[];
@@ -114,4 +117,60 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     settings.dispose();
   });
+
+  testWidgets('search header updates result totalCount when feed finishes loading', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'ui.useCoverAccent': false});
+    final settings = SettingsState(await AppPrefs.load());
+    final library = _SearchLibrary();
+    final api = _PagedSearchApi();
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsState>.value(value: settings),
+          ChangeNotifierProvider<LibraryState>.value(value: library),
+        ],
+        child: MaterialApp(home: SearchScreen(api: api)),
+      ),
+    );
+    await tester.enterText(find.byType(TextField), 'rain');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    expect(find.text('共 27 个结果'), findsOneWidget);
+    expect(find.text('共 0 个结果'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+    library.dispose();
+    settings.dispose();
+  });
+}
+
+class _SearchLibrary extends DownloadLibrary {
+  @override
+  bool isFavorite(int workId) => false;
+}
+
+class _PagedSearchApi extends SearchApi {
+  @override
+  Future<WorksPage> search(
+    String keyword, {
+    int page = 1,
+    int pageSize = 20,
+    WorkOrder order = WorkOrder.createDate,
+    SortDirection sort = SortDirection.desc,
+    List<int> tags = const [],
+    double? rate,
+    int? duration,
+    bool? subtitle,
+    bool? nsfw,
+  }) async {
+    return WorksPage(
+      works: [Work.fromJson({'id': 101, 'title': 'Rainy Night'})],
+      page: 1,
+      pageSize: pageSize,
+      totalCount: 27,
+    );
+  }
 }

@@ -410,6 +410,9 @@ class ActiveFilterBar extends StatelessWidget {
     required this.onClear,
     required this.onAdjustRate,
     required this.onClearDuration,
+    this.onClearNsfw,
+    this.onClearSubtitle,
+    this.onClearTranslation,
   });
 
   final WorkQuery query;
@@ -420,6 +423,9 @@ class ActiveFilterBar extends StatelessWidget {
   final VoidCallback onClear;
   final VoidCallback onAdjustRate;
   final VoidCallback onClearDuration;
+  final VoidCallback? onClearNsfw;
+  final VoidCallback? onClearSubtitle;
+  final VoidCallback? onClearTranslation;
 
   @override
   Widget build(BuildContext context) {
@@ -430,7 +436,7 @@ class ActiveFilterBar extends StatelessWidget {
       chips.add(
         _Chip(
           label: query.nsfw! ? l('work.adult') : l('work.general'),
-          onDeleted: onClear,
+          onDeleted: onClearNsfw,
         ),
       );
     }
@@ -451,10 +457,20 @@ class ActiveFilterBar extends StatelessWidget {
       );
     }
     if (query.subtitle == true) {
-      chips.add(_Chip(label: l('work.subtitle')));
+      chips.add(
+        _Chip(
+          label: l('work.subtitle'),
+          onDeleted: onClearSubtitle ?? onClear,
+        ),
+      );
     }
     if (query.includeTranslationWorks == true) {
-      chips.add(_Chip(label: l('browse.withTranslation')));
+      chips.add(
+        _Chip(
+          label: l('browse.withTranslation'),
+          onDeleted: onClearTranslation ?? onClear,
+        ),
+      );
     }
     for (final id in query.tags) {
       chips.add(
@@ -467,6 +483,9 @@ class ActiveFilterBar extends StatelessWidget {
 
     if (chips.isEmpty) return const SizedBox.shrink();
 
+    final hasClearable =
+        onClearNsfw != null || query.copyWith(clearNsfw: true).hasFilters;
+
     return SizedBox(
       height: 44,
       child: ListView(
@@ -478,13 +497,14 @@ class ActiveFilterBar extends StatelessWidget {
               padding: const EdgeInsets.only(right: 8),
               child: Center(child: c),
             ),
-          Center(
-            child: TextButton.icon(
-              onPressed: onClear,
-              icon: const Icon(Icons.filter_alt_off_outlined, size: 16),
-              label: Text(l('browse.clearFilters')),
+          if (hasClearable)
+            Center(
+              child: TextButton.icon(
+                onPressed: onClear,
+                icon: const Icon(Icons.filter_alt_off_outlined, size: 16),
+                label: Text(l('browse.clearFilters')),
+              ),
             ),
-          ),
         ],
       ),
     );

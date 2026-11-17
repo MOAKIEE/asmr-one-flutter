@@ -25,11 +25,13 @@ class SettingsScreen extends StatelessWidget {
     final settings = context.watch<SettingsState>();
     final auth = context.watch<AuthState>();
     final scheme = Theme.of(context).colorScheme;
+    final extraPad = (AppLayout.horizontalInset(context, maxWidth: 680) - 16)
+        .clamp(0.0, double.infinity);
 
     return PlayerScaffold(
       appBar: AppBar(title: Text(l('settings.title'))),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: 40),
+        padding: EdgeInsets.fromLTRB(extraPad, 0, extraPad, 40),
         children: [
           // ---------------- 外观 ----------------
           SectionHeader(
@@ -93,7 +95,7 @@ class SettingsScreen extends StatelessWidget {
                 const SizedBox(height: 4),
                 _LanguageSelector(settings: settings),
                 const SizedBox(height: 18),
-                _RowLabel('${l('browse.gridView')} · ${settings.gridColumns}'),
+                _RowLabel('${l('settings.gridColumns')} · ${settings.gridColumns}'),
                 Slider(
                   value: settings.gridColumns.toDouble(),
                   min: 1,
@@ -263,16 +265,20 @@ class SettingsScreen extends StatelessWidget {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.person_outline_rounded),
-                  title: Text(l('auth.login')),
+                  title: Text(
+                    auth.hasToken
+                        ? l('settings.loggedInAs', {
+                            'name': auth.user.displayName,
+                          })
+                        : l('auth.login'),
+                  ),
                   subtitle: Text(
                     auth.hasToken
-                        ? (auth.user.displayName)
+                        ? (auth.user.group ?? l('auth.guest'))
                         : l('library.notLoggedIn'),
                   ),
                   trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  ),
+                  onTap: () => _handleAccountTap(context, auth),
                 ),
                 const Divider(indent: 54, endIndent: 16),
                 ListTile(
@@ -362,6 +368,45 @@ class SettingsScreen extends StatelessWidget {
     await settings.clearSearchHistory();
     if (!context.mounted) return;
     _toast(context, l('settings.cleared'));
+  }
+
+  Future<void> _handleAccountTap(BuildContext context, AuthState auth) async {
+    if (!auth.hasToken) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      return;
+    }
+    final l = L10n.of(context);
+    final action = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(auth.user.displayName),
+        content: Text(l('auth.logoutConfirm')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop('cancel'),
+            child: Text(l('common.cancel')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop('switch'),
+            child: Text(l('auth.login')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop('logout'),
+            child: Text(l('library.logout')),
+          ),
+        ],
+      ),
+    );
+    if (!context.mounted) return;
+    if (action == 'logout') {
+      await auth.logout();
+    } else if (action == 'switch') {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+    }
   }
 
   void _toast(BuildContext context, String message) {

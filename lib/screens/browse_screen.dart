@@ -128,23 +128,34 @@ class _BrowseScreenState extends State<BrowseScreen> {
                     q.copyWith(tags: [...q.tags]..remove(id)),
                   ),
                   onClear: () => _controller.clearFilters(),
+                  onClearNsfw: settings.showNsfw
+                      ? () => _controller.update(q.copyWith(clearNsfw: true))
+                      : null,
                   onAdjustRate: () =>
                       _controller.update(q.copyWith(clearRate: true)),
                   onClearDuration: () =>
                       _controller.update(q.copyWith(clearDuration: true)),
+                  onClearSubtitle: () =>
+                      _controller.update(q.copyWith(subtitle: false)),
+                  onClearTranslation: () => _controller.update(
+                    q.copyWith(includeTranslationWorks: false),
+                  ),
                 ),
               ),
               SliverToBoxAdapter(
-                child: _SortRow(
-                  order: q.order,
-                  sort: q.sort,
-                  totalCount: _controller.works.totalCount,
-                  onOrder: (o) => _controller.setOrder(o, q.sort),
-                  onToggleSort: () => _controller.setOrder(
-                    q.order,
-                    q.sort == SortDirection.desc
-                        ? SortDirection.asc
-                        : SortDirection.desc,
+                child: AnimatedBuilder(
+                  animation: _controller.works,
+                  builder: (context, _) => _SortRow(
+                    order: q.order,
+                    sort: q.sort,
+                    totalCount: _controller.works.totalCount,
+                    onOrder: (o) => _controller.setOrder(o, q.sort),
+                    onToggleSort: () => _controller.setOrder(
+                      q.order,
+                      q.sort == SortDirection.desc
+                          ? SortDirection.asc
+                          : SortDirection.desc,
+                    ),
                   ),
                 ),
               ),

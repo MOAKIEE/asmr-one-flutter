@@ -152,26 +152,46 @@ class _TagBrowseScreenState extends State<TagBrowseScreen> {
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 10,
+                        horizontal: 16,
+                        vertical: 8,
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.touch_app_outlined,
-                            size: 16,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
+                      child: InkWell(
+                        onTap: _openPicker,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
                           ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              l('browse.filter'),
-                              style: Theme.of(context).textTheme.labelSmall,
-                            ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.manage_search_rounded,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  l('tag.pickHint'),
+                                  style: Theme.of(context).textTheme.labelMedium
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                size: 18,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),

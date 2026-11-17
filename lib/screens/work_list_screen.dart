@@ -85,11 +85,14 @@ class _WorkListScreenState extends State<WorkListScreen> {
         leadingSlivers: [
           if (widget.showOrderBar)
             SliverToBoxAdapter(
-              child: _OrderBar(
-                order: _query.order,
-                sort: _query.sort,
-                totalCount: _feed.totalCount,
-                onChanged: _changeOrder,
+              child: AnimatedBuilder(
+                animation: _feed,
+                builder: (context, _) => _OrderBar(
+                  order: _query.order,
+                  sort: _query.sort,
+                  totalCount: _feed.totalCount,
+                  onChanged: _changeOrder,
+                ),
               ),
             ),
         ],

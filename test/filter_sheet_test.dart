@@ -57,4 +57,54 @@ void main() {
       },
     );
   }
+
+  testWidgets('ActiveFilterBar deletes subtitle, translation and nsfw chips independently', (
+    tester,
+  ) async {
+    var clearedAll = false;
+    var clearedNsfw = false;
+    var clearedSubtitle = false;
+    var clearedTranslation = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ActiveFilterBar(
+            query: const WorkQuery(
+              nsfw: true,
+              subtitle: true,
+              includeTranslationWorks: true,
+              tags: [1],
+            ),
+            tagLabels: const {1: 'Ear Cleaning'},
+            onRemoveTag: (_) {},
+            onClear: () => clearedAll = true,
+            onAdjustRate: () {},
+            onClearDuration: () {},
+            onClearNsfw: () => clearedNsfw = true,
+            onClearSubtitle: () => clearedSubtitle = true,
+            onClearTranslation: () => clearedTranslation = true,
+          ),
+        ),
+      ),
+    );
+
+    final deleteIcons = find.byIcon(Icons.close_rounded);
+    expect(deleteIcons, findsNWidgets(4));
+
+    await tester.tap(deleteIcons.at(0));
+    await tester.pump();
+    expect(clearedNsfw, isTrue);
+    expect(clearedAll, isFalse);
+
+    await tester.tap(deleteIcons.at(1));
+    await tester.pump();
+    expect(clearedSubtitle, isTrue);
+    expect(clearedAll, isFalse);
+
+    await tester.tap(deleteIcons.at(2));
+    await tester.pump();
+    expect(clearedTranslation, isTrue);
+    expect(clearedAll, isFalse);
+  });
 }

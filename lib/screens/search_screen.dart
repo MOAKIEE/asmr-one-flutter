@@ -133,29 +133,32 @@ class _SearchScreenState extends State<SearchScreen> {
               listMode: _listMode,
               leadingSlivers: [
                 SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 4, 10, 0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            l('browse.resultCount', {'n': _feed!.totalCount}),
-                            style: Theme.of(context).textTheme.labelSmall,
+                  child: AnimatedBuilder(
+                    animation: _feed!,
+                    builder: (context, _) => Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 4, 10, 0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              l('browse.resultCount', {'n': _feed!.totalCount}),
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          tooltip: _listMode
-                              ? l('browse.gridView')
-                              : l('browse.listView'),
-                          onPressed: () =>
-                              setState(() => _listMode = !_listMode),
-                          icon: Icon(
-                            _listMode
-                                ? Icons.grid_view_rounded
-                                : Icons.view_list_rounded,
+                          IconButton(
+                            tooltip: _listMode
+                                ? l('browse.gridView')
+                                : l('browse.listView'),
+                            onPressed: () =>
+                                setState(() => _listMode = !_listMode),
+                            icon: Icon(
+                              _listMode
+                                  ? Icons.grid_view_rounded
+                                  : Icons.view_list_rounded,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

@@ -24,13 +24,14 @@ class DownloadsScreen extends StatelessWidget {
 
     final rows = library.downloads;
     final active = downloads.tasks.where((t) => t.isActive).toList();
-    final failed = downloads.tasks
-        .where(
-          (t) =>
-              t.status == DownloadStatus.failed ||
-              t.status == DownloadStatus.paused,
-        )
+    final paused = downloads.tasks
+        .where((t) => t.status == DownloadStatus.paused)
         .toList();
+    final failed = downloads.tasks
+        .where((t) => t.status == DownloadStatus.failed)
+        .toList();
+    final extraPad = (AppLayout.horizontalInset(context, maxWidth: 680) - 16)
+        .clamp(0.0, double.infinity);
 
     // 按作品聚合已完成的下载。
     final byWork = <int, List<DownloadRow>>{};
@@ -48,14 +49,14 @@ class DownloadsScreen extends StatelessWidget {
                 t.status == DownloadStatus.cancelled,
           ))
             IconButton(
-              tooltip: l('common.reset'),
+              tooltip: l('download.clearFinished'),
               onPressed: downloads.clearFinished,
               icon: const Icon(Icons.cleaning_services_outlined),
             ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: 32),
+        padding: EdgeInsets.fromLTRB(extraPad, 0, extraPad, 32),
         children: [
           AppGroupCard(
             margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -69,7 +70,7 @@ class DownloadsScreen extends StatelessWidget {
               onChanged: downloads.setWifiOnly,
             ),
           ),
-          if (rows.isEmpty && active.isEmpty && failed.isEmpty)
+          if (rows.isEmpty && active.isEmpty && paused.isEmpty && failed.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 48),
               child: EmptyView(
@@ -90,6 +91,18 @@ class DownloadsScreen extends StatelessWidget {
                 onPause: () => downloads.pauseTask(task),
               ),
           ],
+          if (paused.isNotEmpty) ...[
+            SectionHeader(
+              title: l('download.pausedSection'),
+              icon: Icons.pause_circle_outline_rounded,
+            ),
+            for (final task in paused)
+              _TaskTile(
+                task: task,
+                onRetry: () => downloads.retry(task),
+                onCancel: () => downloads.cancel(task),
+              ),
+          ],
           if (failed.isNotEmpty) ...[
             SectionHeader(
               title: l('download.failed'),
@@ -98,13 +111,13 @@ class DownloadsScreen extends StatelessWidget {
             for (final task in failed)
               _TaskTile(
                 task: task,
-                onCancel: () => downloads.retry(task),
-                retry: true,
+                onRetry: () => downloads.retry(task),
+                onCancel: () => downloads.cancel(task),
               ),
           ],
           if (byWork.isNotEmpty)
             SectionHeader(
-              title: l('common.total', {'n': byWork.length}),
+              title: l('download.completedSection', {'n': byWork.length}),
               icon: Icons.offline_pin_rounded,
               subtitle: Fmt.size(library.downloadBytes),
             ),
@@ -150,22 +163,43 @@ class _TaskTile extends StatelessWidget {
   const _TaskTile({
     required this.task,
     required this.onCancel,
-    this.retry = false,
+    this.onRetry,
     this.onPause,
   });
 
   final DownloadTask task;
   final VoidCallback onCancel;
-  final bool retry;
+  final VoidCallback? onRetry;
   final VoidCallback? onPause;
 
   @override
   Widget build(BuildContext context) {
+    final l = L10n.of(context);
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isPaused = task.status == DownloadStatus.paused;
+    final isFailed = task.status == DownloadStatus.failed;
+    final isStopped = isPaused || isFailed;
+    final progressText =
+        '${Fmt.size(task.received)}${task.total > 0 ? ' / ${Fmt.size(task.total)}' : ''}';
+    final subtitleText = isPaused
+        ? (task.received > 0
+              ? '${l('download.paused')} · $progressText'
+              : l('download.paused'))
+        : isFailed
+        ? (task.error?.trim().isNotEmpty == true
+              ? task.error!.trim()
+              : l('download.failed'))
+        : progressText;
+
     return ListTile(
       leading: Icon(
-        retry ? Icons.refresh_rounded : Icons.downloading_rounded,
-        color: retry ? theme.colorScheme.error : theme.colorScheme.primary,
+        isPaused
+            ? Icons.pause_circle_outline_rounded
+            : isFailed
+            ? Icons.error_outline_rounded
+            : Icons.downloading_rounded,
+        color: isFailed ? scheme.error : scheme.primary,
       ),
       title: Text(
         Fmt.stripExt(task.title),
@@ -176,19 +210,14 @@ class _TaskTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 4),
-          if (!retry)
+          if (!isStopped)
             LinearProgressIndicator(
               value: task.progress > 0 ? task.progress : null,
               minHeight: 3,
             ),
           const SizedBox(height: 4),
           Text(
-            retry
-                ? (task.status == DownloadStatus.paused
-                      ? L10n.of(context)('download.paused')
-                      : task.error ?? '')
-                : '${Fmt.size(task.received)}'
-                      '${task.total > 0 ? ' / ${Fmt.size(task.total)}' : ''}',
+            subtitleText,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.labelSmall,
@@ -201,11 +230,20 @@ class _TaskTile extends StatelessWidget {
           if (onPause != null)
             IconButton(
               onPressed: onPause,
-              tooltip: L10n.of(context)('download.pause'),
+              tooltip: l('download.pause'),
               icon: const Icon(Icons.pause_rounded),
             ),
+          if (onRetry != null)
+            IconButton(
+              onPressed: onRetry,
+              tooltip: l('common.retry'),
+              icon: Icon(
+                isPaused ? Icons.play_arrow_rounded : Icons.refresh_rounded,
+              ),
+            ),
           IconButton(
-            icon: Icon(retry ? Icons.refresh_rounded : Icons.close_rounded),
+            tooltip: l('common.delete'),
+            icon: const Icon(Icons.close_rounded),
             onPressed: onCancel,
           ),
         ],
