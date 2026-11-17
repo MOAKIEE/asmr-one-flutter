@@ -8,6 +8,7 @@ import '../core/models/work.dart';
 import '../core/theme/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../state/settings_state.dart';
+import '../widgets/common.dart';
 import '../widgets/work_card.dart';
 import '../widgets/work_rail.dart';
 import 'tag_browse_screen.dart';
@@ -166,11 +167,12 @@ class _HomeHeader extends StatelessWidget {
     final scheme = theme.colorScheme;
     final fg = AppDecor.heroForeground(scheme);
     final topPadding = MediaQuery.paddingOf(context).top;
+    final hPad = AppLayout.horizontalInset(context, maxWidth: 880, minPadding: 16);
     final lang = _langOf(context);
     final hotTags = FeaturedTags.resolve();
 
     return Container(
-      margin: EdgeInsets.fromLTRB(16, topPadding + 12, 16, 4),
+      margin: EdgeInsets.fromLTRB(hPad, topPadding + 12, hPad, 4),
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
       decoration: BoxDecoration(
         gradient: AppDecor.heroGradient(scheme),

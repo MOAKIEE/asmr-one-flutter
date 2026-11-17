@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -12,9 +14,20 @@ import 'common.dart';
 
 /// 网格模式的作品卡片。
 class WorkCard extends StatelessWidget {
-  /// 封面下方文字区所需的高度（标题两行 + 两行元信息），
-  /// 网格布局用它计算 mainAxisExtent，避免出现溢出条纹。
-  static const double textHeight = 94;
+  /// 根据当前字号缩放估算封面下方文字区所需的最小高度（标题两行 + 两行元信息），
+  /// 供网格与横滑栏计算 `mainAxisExtent`，避免放大字号后发生溢出。
+  static double textHeightFor(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final scaler = MediaQuery.textScalerOf(context);
+    final bodySize = text.bodyMedium?.fontSize ?? 14;
+    final labelMedSize = text.labelMedium?.fontSize ?? 12;
+    final labelSmallSize = text.labelSmall?.fontSize ?? 11;
+    final titleH = scaler.scale(bodySize) * 1.35 * 2;
+    final row1H = math.max(scaler.scale(labelMedSize) * 1.45, 16.0);
+    final row2H = math.max(scaler.scale(labelSmallSize) * 1.45, 15.0);
+    // 8 (封面与文字间距) + 6 (标题与元信息缓冲) + 3 (两行元信息间距) + 8 (字体渲染行距冗余)
+    return (8 + titleH + 6 + row1H + 3 + row2H + 8).ceilToDouble();
+  }
 
   const WorkCard({
     super.key,
@@ -36,6 +49,7 @@ class WorkCard extends StatelessWidget {
     final isFav = showFavoriteMark
         ? context.select<LibraryState, bool>((s) => s.isFavorite(work.id))
         : false;
+    final textHeight = textHeightFor(context);
 
     return InkWell(
       onTap: onTap ?? () => openWork(context, work),
@@ -44,67 +58,102 @@ class WorkCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Stack(
-            children: [
-              CoverImage(
-                url: work.mainCoverUrl,
-                seedId: work.id,
-                aspectRatio: 1,
-                radius: 16,
-                blur: settings.blurNsfw && work.nsfw,
-              ),
-              Positioned(
-                left: 8,
-                top: 8,
-                child: AgeBadge(
-                  nsfw: work.nsfw,
-                  label: work.nsfw ? l('work.adult') : l('work.general'),
-                  overlay: true,
-                ),
-              ),
-              if (work.hasSubtitle)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: _MiniBadge(
-                    icon: Icons.subtitles_rounded,
-                    color: Colors.black.withValues(alpha: 0.62),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 115;
+              final badgePad = compact ? 5.0 : 8.0;
+              return Stack(
+                children: [
+                  CoverImage(
+                    url: work.mainCoverUrl,
+                    seedId: work.id,
+                    aspectRatio: 1,
+                    radius: compact ? 12 : 16,
+                    blur: settings.blurNsfw && work.nsfw,
                   ),
-                ),
-              if (isFav)
-                Positioned(
-                  right: 8,
-                  bottom: 8,
-                  child: _MiniBadge(
-                    icon: Icons.favorite_rounded,
-                    color: theme.colorScheme.primary,
+                  Positioned(
+                    left: badgePad,
+                    right: badgePad,
+                    top: badgePad,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: AgeBadge(
+                              nsfw: work.nsfw,
+                              label: work.nsfw
+                                  ? l('work.adult')
+                                  : l('work.general'),
+                              overlay: true,
+                            ),
+                          ),
+                        ),
+                        if (work.hasSubtitle) ...[
+                          const SizedBox(width: 4),
+                          _MiniBadge(
+                            icon: Icons.subtitles_rounded,
+                            color: Colors.black.withValues(alpha: 0.62),
+                            compact: compact,
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
-              if (work.isFree)
-                Positioned(
-                  left: 8,
-                  bottom: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF3DDC97).withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      l('work.free'),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 10,
-                        height: 1.1,
+                  if (work.isFree || isFav)
+                    Positioned(
+                      left: badgePad,
+                      right: badgePad,
+                      bottom: badgePad,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          if (work.isFree)
+                            Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: compact ? 5 : 7,
+                                    vertical: compact ? 2 : 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFF3DDC97,
+                                    ).withValues(alpha: 0.94),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    l('work.free'),
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: compact ? 9 : 10,
+                                      height: 1.1,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            )
+                          else
+                            const Spacer(),
+                          if (isFav) ...[
+                            if (work.isFree) const SizedBox(width: 4),
+                            _MiniBadge(
+                              icon: Icons.favorite_rounded,
+                              color: const Color(0xFFE0487B),
+                              compact: compact,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                  ),
-                ),
-            ],
+                ],
+              );
+            },
           ),
           const SizedBox(height: 8),
           SizedBox(
@@ -125,6 +174,7 @@ class WorkCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
+                      flex: 3,
                       child: Text(
                         work.circleName,
                         maxLines: 1,
@@ -133,32 +183,63 @@ class WorkCard extends StatelessWidget {
                       ),
                     ),
                     if (work.rateAverage > 0) ...[
-                      const SizedBox(width: 6),
-                      RatingBadge(rating: work.rateAverage, compact: true),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        flex: 2,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: RatingBadge(
+                            rating: work.rateAverage,
+                            compact: true,
+                          ),
+                        ),
+                      ),
                     ],
                   ],
                 ),
                 const SizedBox(height: 3),
                 Row(
                   children: [
-                    Icon(
-                      Icons.download_rounded,
-                      size: 12,
-                      color: theme.colorScheme.onSurfaceVariant,
+                    Expanded(
+                      flex: 3,
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.download_rounded,
+                            size: 12,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 3),
+                          Flexible(
+                            child: Text(
+                              Fmt.count(work.dlCount, languageCode: langCode),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              softWrap: false,
+                              style: theme.textTheme.labelSmall,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(width: 3),
-                    Text(
-                      Fmt.count(work.dlCount, languageCode: langCode),
-                      style: theme.textTheme.labelSmall,
-                    ),
-                    const Spacer(),
-                    Text(
-                      Fmt.price(work.price, l('work.free')),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: work.isFree
-                            ? const Color(0xFF3DDC97)
-                            : theme.colorScheme.primary,
+                    const SizedBox(width: 4),
+                    Flexible(
+                      flex: 2,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          Fmt.price(work.price, l('work.free')),
+                          maxLines: 1,
+                          softWrap: false,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: work.isFree
+                                ? const Color(0xFF3DDC97)
+                                : theme.colorScheme.primary,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -173,20 +254,25 @@ class WorkCard extends StatelessWidget {
 }
 
 class _MiniBadge extends StatelessWidget {
-  const _MiniBadge({required this.icon, required this.color});
+  const _MiniBadge({
+    required this.icon,
+    required this.color,
+    this.compact = false,
+  });
 
   final IconData icon;
   final Color color;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(4.5),
+      padding: EdgeInsets.all(compact ? 3.5 : 4.5),
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(compact ? 6 : 7),
       ),
-      child: Icon(icon, size: 12, color: Colors.white),
+      child: Icon(icon, size: compact ? 10.5 : 12, color: Colors.white),
     );
   }
 }
@@ -231,137 +317,139 @@ class WorkListTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.all(10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: 78,
-                  child: CoverImage(
-                    url: work.mainCoverUrl,
-                    seedId: work.id,
-                    radius: 12,
-                    blur: settings.blurNsfw && work.nsfw,
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 78,
+                    child: CoverImage(
+                      url: work.mainCoverUrl,
+                      seedId: work.id,
+                      radius: 12,
+                      blur: settings.blurNsfw && work.nsfw,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 78),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          work.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            height: 1.28,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          subtitleOverride ?? work.circleName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelSmall,
-                        ),
-                        const SizedBox(height: 4),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            if (work.rateAverage > 0)
-                              RatingBadge(
-                                rating: work.rateAverage,
-                                count: work.rateCount,
-                                compact: true,
-                              ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.download_rounded,
-                                  size: 12,
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  Fmt.count(
-                                    work.dlCount,
-                                    languageCode: langCode,
-                                  ),
-                                  style: theme.textTheme.labelSmall,
-                                ),
-                              ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 78),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            work.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              height: 1.28,
                             ),
-                            if (work.duration != null && work.duration! > 0)
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitleOverride ?? work.circleName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall,
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              if (work.rateAverage > 0)
+                                RatingBadge(
+                                  rating: work.rateAverage,
+                                  count: work.rateCount,
+                                  compact: true,
+                                ),
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    Icons.schedule_rounded,
+                                    Icons.download_rounded,
                                     size: 12,
                                     color: scheme.onSurfaceVariant,
                                   ),
                                   const SizedBox(width: 3),
-                                  Flexible(
-                                    child: Text(
-                                      Fmt.duration(work.duration),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.labelSmall,
+                                  Text(
+                                    Fmt.count(
+                                      work.dlCount,
+                                      languageCode: langCode,
                                     ),
+                                    style: theme.textTheme.labelSmall,
                                   ),
                                 ],
                               ),
-                          ],
+                              if (work.duration != null && work.duration! > 0)
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.schedule_rounded,
+                                      size: 12,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Flexible(
+                                      child: Text(
+                                        Fmt.duration(work.duration),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.labelSmall,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 78),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        AgeBadge(
+                          nsfw: work.nsfw,
+                          label: work.nsfw ? l('work.adult') : l('work.general'),
                         ),
+                        if (trailing != null)
+                          trailing!
+                        else
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isFav) ...[
+                                Icon(
+                                  Icons.favorite_rounded,
+                                  size: 15,
+                                  color: scheme.primary,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                Fmt.price(work.price, l('work.free')),
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: work.isFree
+                                      ? const Color(0xFF3DDC97)
+                                      : scheme.primary,
+                                ),
+                              ),
+                            ],
+                          ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  height: 78,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      AgeBadge(
-                        nsfw: work.nsfw,
-                        label: work.nsfw ? l('work.adult') : l('work.general'),
-                      ),
-                      if (trailing != null)
-                        trailing!
-                      else
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (isFav) ...[
-                              Icon(
-                                Icons.favorite_rounded,
-                                size: 15,
-                                color: scheme.primary,
-                              ),
-                              const SizedBox(width: 4),
-                            ],
-                            Text(
-                              Fmt.price(work.price, l('work.free')),
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: work.isFree
-                                    ? const Color(0xFF3DDC97)
-                                    : scheme.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

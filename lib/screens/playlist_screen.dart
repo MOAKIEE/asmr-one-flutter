@@ -11,7 +11,7 @@ import '../state/library_state.dart';
 import '../state/settings_state.dart';
 import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
-import '../widgets/work_card.dart';
+import '../widgets/work_grid.dart';
 
 /// 播放列表总览：本地列表 + 云端列表。
 class PlaylistListScreen extends StatelessWidget {
@@ -274,42 +274,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
               message: l('playlist.empty'),
               icon: Icons.playlist_remove_rounded,
             )
-          : WorkFeedViewStub(works: _works, columns: settings.gridColumns),
-    );
-  }
-}
-
-/// 静态作品网格（不参与分页）。
-class WorkFeedViewStub extends StatelessWidget {
-  const WorkFeedViewStub({super.key, required this.works, this.columns = 2});
-
-  final List<Work> works;
-  final int columns;
-
-  @override
-  Widget build(BuildContext context) {
-    const padding = EdgeInsets.fromLTRB(16, 4, 16, 28);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const spacing = 12.0;
-        final available = constraints.maxWidth - padding.horizontal;
-        final cols = columns.clamp(1, 5);
-        final itemWidth = (available - spacing * (cols - 1)) / cols;
-        return GridView.builder(
-          padding: padding,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cols,
-            crossAxisSpacing: spacing,
-            mainAxisSpacing: 18,
-            mainAxisExtent: itemWidth + WorkCard.textHeight,
-          ),
-          itemCount: works.length,
-          itemBuilder: (context, i) {
-            final w = works[i];
-            return WorkCard(work: w, onTap: () => openWork(context, w));
-          },
-        );
-      },
+          : StaticWorkGrid(works: _works, columns: settings.gridColumns),
     );
   }
 }

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../state/library_state.dart';
+import '../widgets/common.dart';
 import '../widgets/player_scaffold.dart';
 
 class BackupScreen extends StatefulWidget {
@@ -62,10 +63,11 @@ class _BackupScreenState extends State<BackupScreen> {
     final l = L10n.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final hPad = AppLayout.horizontalInset(context, maxWidth: 640, minPadding: 20);
     return PlayerScaffold(
       appBar: AppBar(title: Text(l('backup.title'))),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.fromLTRB(hPad, 20, hPad, 20),
         children: [
           Container(
             padding: const EdgeInsets.all(20),

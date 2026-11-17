@@ -8,6 +8,7 @@ import '../state/settings_state.dart';
 import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
 import '../widgets/work_card.dart';
+import '../widgets/work_grid.dart';
 import 'playlist_screen.dart';
 
 /// 收藏列表。
@@ -38,7 +39,7 @@ class FavoritesScreen extends StatelessWidget {
               message: l('library.emptyFavorites'),
               icon: Icons.favorite_border_rounded,
             )
-          : _LocalWorkGrid(
+          : StaticWorkGrid(
               works: works,
               columns: settings.gridColumns,
               onLongPress: (w) => _showActions(context, w, isFavorite: true),
@@ -123,51 +124,6 @@ class HistoryScreen extends StatelessWidget {
                 );
               },
             ),
-    );
-  }
-}
-
-/// 本地作品网格（收藏等离线数据）。
-class _LocalWorkGrid extends StatelessWidget {
-  const _LocalWorkGrid({
-    required this.works,
-    required this.columns,
-    this.onLongPress,
-  });
-
-  final List<Work> works;
-  final int columns;
-  final void Function(Work work)? onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    const padding = EdgeInsets.fromLTRB(16, 4, 16, 28);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const spacing = 12.0;
-        final available = constraints.maxWidth - padding.horizontal;
-        final cols = columns.clamp(1, 5);
-        final itemWidth = (available - spacing * (cols - 1)) / cols;
-        return GridView.builder(
-          padding: padding,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cols,
-            crossAxisSpacing: spacing,
-            mainAxisSpacing: 18,
-            mainAxisExtent: itemWidth + WorkCard.textHeight,
-          ),
-          itemCount: works.length,
-          itemBuilder: (context, i) {
-            final work = works[i];
-            return GestureDetector(
-              onLongPress: onLongPress == null
-                  ? null
-                  : () => onLongPress!(work),
-              child: WorkCard(work: work),
-            );
-          },
-        );
-      },
     );
   }
 }

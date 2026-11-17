@@ -6,6 +6,7 @@ import 'package:shimmer/shimmer.dart';
 
 import '../core/theme/app_theme.dart';
 import '../l10n/app_localizations.dart';
+import 'work_grid.dart';
 
 /// 封面图：带渐变占位、可选模糊（成人内容打码）与圆角。
 class CoverImage extends StatefulWidget {
@@ -192,28 +193,55 @@ class GridSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      physics: const NeverScrollableScrollPhysics(),
-      shrinkWrap: true,
-      itemCount: count,
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 16,
-        childAspectRatio: 0.62,
-      ),
-      itemBuilder: (_, _) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Expanded(child: ShimmerBox(aspectRatio: 1, radius: 18)),
-          SizedBox(height: 10),
-          ShimmerBox(height: 12, radius: 6),
-          SizedBox(height: 6),
-          ShimmerBox(height: 12, width: 70, radius: 6),
-        ],
-      ),
+    const padding = EdgeInsets.fromLTRB(16, 8, 16, 24);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final available = (constraints.maxWidth - padding.horizontal).clamp(
+          120.0,
+          double.infinity,
+        );
+        return GridView.builder(
+          padding: padding,
+          physics: const NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          itemCount: count,
+          gridDelegate: WorkGridLayout.delegate(
+            context,
+            availableWidth: available,
+            columns: columns,
+            mainAxisSpacing: 16,
+          ),
+          itemBuilder: (_, _) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              AspectRatio(
+                aspectRatio: 1,
+                child: ShimmerBox(radius: 18),
+              ),
+              SizedBox(height: 10),
+              ShimmerBox(height: 12, radius: 6),
+              SizedBox(height: 6),
+              ShimmerBox(height: 12, width: 70, radius: 6),
+            ],
+          ),
+        );
+      },
     );
+  }
+}
+
+/// 宽屏内容边距计算，窄屏下保持原始左右内边距。
+class AppLayout {
+  const AppLayout._();
+
+  static double horizontalInset(
+    BuildContext context, {
+    double maxWidth = 720,
+    double minPadding = 16,
+  }) {
+    final width = MediaQuery.sizeOf(context).width;
+    if (width <= maxWidth + minPadding * 2) return minPadding;
+    return (width - maxWidth) / 2;
   }
 }
 

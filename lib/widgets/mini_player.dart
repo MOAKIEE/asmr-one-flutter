@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/theme/app_theme.dart';
+import '../core/utils/formatters.dart';
 import '../l10n/app_localizations.dart';
 import '../screens/player_screen.dart';
 import '../state/player_state.dart';
@@ -16,88 +18,101 @@ class MiniPlayer extends StatelessWidget {
     final item = player.currentItem;
     if (item == null) return const SizedBox.shrink();
 
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: Material(
-        color: scheme.surfaceContainerHigh.withValues(alpha: 0.97),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(
-            color: scheme.outlineVariant.withValues(alpha: 0.55),
-          ),
-        ),
-        elevation: 8,
-        shadowColor: Colors.black.withValues(alpha: 0.3),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const PlayerScreen())),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
-                child: Row(
+      child: Center(
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: AppDecor.softShadow(theme.brightness),
+            ),
+            child: Material(
+              color: scheme.surfaceContainerHigh,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.55),
+                ),
+              ),
+              elevation: 0,
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(
-                      width: 46,
-                      child: CoverImage(
-                        url: item.coverUrl,
-                        seedId: item.workId,
-                        radius: 11,
-                      ),
-                    ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+                      child: Row(
                         children: [
-                          Text(
-                            item.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
+                          SizedBox(
+                            width: 46,
+                            child: CoverImage(
+                              url: item.coverUrl,
+                              seedId: item.workId,
+                              radius: 11,
+                            ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            item.workTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelSmall,
+                          const SizedBox(width: 11),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  Fmt.stripExt(item.title),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  item.workTitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                          _ControlButton(
+                            icon: Icons.skip_previous_rounded,
+                            onTap: player.previous,
+                          ),
+                          _ControlButton(
+                            icon: player.playing
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            big: true,
+                            onTap: player.toggle,
+                          ),
+                          _ControlButton(
+                            icon: Icons.skip_next_rounded,
+                            onTap: player.hasNext ? player.next : null,
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                            tooltip: L10n.of(context)('common.close'),
+                            onPressed: player.stop,
                           ),
                         ],
                       ),
                     ),
-                    _ControlButton(
-                      icon: Icons.skip_previous_rounded,
-                      onTap: player.previous,
-                    ),
-                    _ControlButton(
-                      icon: player.playing
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      big: true,
-                      onTap: player.toggle,
-                    ),
-                    _ControlButton(
-                      icon: Icons.skip_next_rounded,
-                      onTap: player.hasNext ? player.next : null,
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      tooltip: L10n.of(context)('common.close'),
-                      onPressed: player.stop,
-                    ),
+                    _ProgressLine(player: player),
                   ],
                 ),
               ),
-              _ProgressLine(player: player),
-            ],
+            ),
           ),
         ),
       ),

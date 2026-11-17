@@ -89,7 +89,7 @@ class _WorkRailState extends State<WorkRail> {
           onAction: widget.onSeeAll,
         ),
         SizedBox(
-          height: widget.cardWidth + WorkCard.textHeight + 8,
+          height: widget.cardWidth + WorkCard.textHeightFor(context) + 8,
           child: AnimatedBuilder(
             animation: _feed,
             builder: (context, _) {

@@ -1,9 +1,86 @@
 import 'package:flutter/material.dart';
 
+import '../core/models/work.dart';
 import '../l10n/app_localizations.dart';
 import '../state/work_feed.dart';
 import 'common.dart';
 import 'work_card.dart';
+
+/// 作品网格与骨架屏共用的列数与尺寸计算。
+class WorkGridLayout {
+  const WorkGridLayout._();
+
+  /// 宽屏下若使用默认的 2 列则按可用宽度自动扩展列数，避免单卡过大。
+  static int effectiveColumns(double availableWidth, int preferredColumns) {
+    final safe = preferredColumns.clamp(1, 5);
+    if (availableWidth >= 600 && safe == 2) {
+      return (availableWidth / 210).floor().clamp(2, 5);
+    }
+    return safe;
+  }
+
+  static SliverGridDelegateWithFixedCrossAxisCount delegate(
+    BuildContext context, {
+    required double availableWidth,
+    required int columns,
+    double spacing = 12,
+    double mainAxisSpacing = 18,
+  }) {
+    final cols = effectiveColumns(availableWidth, columns);
+    final itemWidth = cols <= 1
+        ? availableWidth
+        : (availableWidth - spacing * (cols - 1)) / cols;
+    return SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: cols,
+      crossAxisSpacing: spacing,
+      mainAxisSpacing: mainAxisSpacing,
+      mainAxisExtent: itemWidth + WorkCard.textHeightFor(context),
+    );
+  }
+}
+
+/// 静态作品网格（收藏列表、播放列表详情等非分页场景共用）。
+class StaticWorkGrid extends StatelessWidget {
+  const StaticWorkGrid({
+    super.key,
+    required this.works,
+    this.columns = 2,
+    this.padding = const EdgeInsets.fromLTRB(16, 4, 16, 28),
+    this.onLongPress,
+  });
+
+  final List<Work> works;
+  final int columns;
+  final EdgeInsets padding;
+  final void Function(Work work)? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final available = constraints.maxWidth - padding.horizontal;
+        return GridView.builder(
+          padding: padding,
+          gridDelegate: WorkGridLayout.delegate(
+            context,
+            availableWidth: available,
+            columns: columns,
+          ),
+          itemCount: works.length,
+          itemBuilder: (context, i) {
+            final work = works[i];
+            final card = WorkCard(work: work, onTap: () => openWork(context, work));
+            if (onLongPress == null) return card;
+            return GestureDetector(
+              onLongPress: () => onLongPress!(work),
+              child: card,
+            );
+          },
+        );
+      },
+    );
+  }
+}
 
 /// 作品列表视图：统一处理骨架屏、错误、空态、无限滚动与网格 / 列表两种布局。
 ///
@@ -30,12 +107,8 @@ class WorkFeedView extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final spacing = listMode ? 0.0 : 12.0;
         final available = constraints.maxWidth - padding.horizontal;
-        final safeColumns = columns.clamp(1, 5);
-        final itemWidth = safeColumns <= 1
-            ? available
-            : (available - spacing * (safeColumns - 1)) / safeColumns;
+        final safeColumns = WorkGridLayout.effectiveColumns(available, columns);
 
         return AnimatedBuilder(
           animation: feed,
@@ -105,11 +178,10 @@ class WorkFeedView extends StatelessWidget {
                       padding: padding,
                       sliver: SliverGrid.builder(
                         itemCount: items.length,
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: safeColumns,
-                          crossAxisSpacing: spacing,
-                          mainAxisSpacing: 18,
-                          mainAxisExtent: itemWidth + WorkCard.textHeight,
+                        gridDelegate: WorkGridLayout.delegate(
+                          context,
+                          availableWidth: available,
+                          columns: columns,
                         ),
                         itemBuilder: (context, i) => WorkCard(work: items[i]),
                       ),
