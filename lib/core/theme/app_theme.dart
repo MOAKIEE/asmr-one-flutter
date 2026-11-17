@@ -92,7 +92,12 @@ class AppTheme {
         backgroundColor: scheme.surfaceContainerHigh,
         selectedColor: scheme.primary.withValues(alpha: 0.9),
         disabledColor: scheme.surfaceContainerHigh.withValues(alpha: 0.5),
-        labelStyle: text.labelMedium,
+        checkmarkColor: scheme.onPrimary,
+        labelStyle: _ChipLabelStyle(
+          base: text.labelMedium ?? const TextStyle(),
+          unselectedColor: scheme.onSurfaceVariant,
+          selectedColor: scheme.onPrimary,
+        ),
         secondaryLabelStyle: text.labelMedium?.copyWith(
           color: scheme.onPrimary,
           fontWeight: FontWeight.w600,
@@ -411,4 +416,34 @@ class AppDecor {
             offset: const Offset(0, 6),
           ),
         ];
+}
+
+class _ChipLabelStyle extends TextStyle implements WidgetStateTextStyle {
+  _ChipLabelStyle({
+    required this.base,
+    required this.unselectedColor,
+    required this.selectedColor,
+  }) : super(
+         inherit: base.inherit,
+         fontSize: base.fontSize,
+         fontWeight: FontWeight.w500,
+         color: unselectedColor,
+         fontFamily: base.fontFamily,
+         fontFamilyFallback: base.fontFamilyFallback,
+         letterSpacing: base.letterSpacing,
+         height: base.height,
+       );
+
+  final TextStyle base;
+  final Color unselectedColor;
+  final Color selectedColor;
+
+  @override
+  TextStyle resolve(Set<WidgetState> states) {
+    final selected = states.contains(WidgetState.selected);
+    return base.copyWith(
+      color: selected ? selectedColor : unselectedColor,
+      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+    );
+  }
 }

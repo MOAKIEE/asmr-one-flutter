@@ -23,6 +23,7 @@ class ListeningToolsScreen extends StatefulWidget {
 class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
   late final ListeningNotes _notes;
   final _scroll = ScrollController();
+  final Map<int, GlobalKey> _cueKeys = {};
   bool _busy = false;
   bool _follow = true;
   int _lastActive = -1;
@@ -199,7 +200,7 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          player.currentItem!.title,
+                          Fmt.stripExt(player.currentItem!.title),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodySmall
@@ -474,8 +475,6 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
             : StreamBuilder<Duration>(
                 stream: player.player.positionStream,
                 builder: (context, snapshot) {
-                  final extent =
-                      56 + MediaQuery.textScalerOf(context).scale(16) * 4.5;
                   final active = Subtitles.activeIndex(
                     _notes.cues,
                     (snapshot.data ?? player.player.position).inMilliseconds,
@@ -484,26 +483,45 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
                   if (_follow && active >= 0 && active != _lastActive) {
                     _lastActive = active;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted && _scroll.hasClients) {
-                        _scroll.animateTo(
-                          (active * extent - extent).clamp(
-                            0,
-                            _scroll.position.maxScrollExtent,
-                          ),
+                      if (!mounted || !_scroll.hasClients) return;
+                      final targetCtx = _cueKeys[active]?.currentContext;
+                      if (targetCtx != null) {
+                        Scrollable.ensureVisible(
+                          targetCtx,
+                          alignment: 0.35,
                           duration: const Duration(milliseconds: 250),
                           curve: Curves.easeOut,
                         );
+                      } else {
+                        final maxExtent = _scroll.position.maxScrollExtent;
+                        if (maxExtent > 0 && _notes.cues.length > 1) {
+                          final approx =
+                              maxExtent * (active / (_notes.cues.length - 1));
+                          _scroll.jumpTo(approx.clamp(0.0, maxExtent));
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            final retryCtx = _cueKeys[active]?.currentContext;
+                            if (mounted && retryCtx != null) {
+                              Scrollable.ensureVisible(
+                                retryCtx,
+                                alignment: 0.35,
+                                duration: const Duration(milliseconds: 200),
+                                curve: Curves.easeOut,
+                              );
+                            }
+                          });
+                        }
                       }
                     });
                   }
                   return ListView.builder(
                     controller: _scroll,
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    itemExtent: extent,
                     itemCount: _notes.cues.length,
                     itemBuilder: (context, i) {
                       final cue = _notes.cues[i];
+                      final key = _cueKeys.putIfAbsent(i, GlobalKey.new);
                       return Padding(
+                        key: key,
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Material(
                           color: i == active
@@ -527,6 +545,7 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
                                     Fmt.position(
@@ -543,22 +562,18 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
                                         ),
                                   ),
                                   const SizedBox(height: 6),
-                                  Expanded(
-                                    child: Text(
-                                      cue.text,
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        height: 1.5,
-                                        color: i == active
-                                            ? Theme.of(context)
-                                                  .colorScheme
-                                                  .onPrimaryContainer
-                                            : Theme.of(context)
-                                                  .colorScheme
-                                                  .onSurface,
-                                      ),
+                                  Text(
+                                    cue.text,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      height: 1.5,
+                                      color: i == active
+                                          ? Theme.of(context)
+                                                .colorScheme
+                                                .onPrimaryContainer
+                                          : Theme.of(context)
+                                                .colorScheme
+                                                .onSurface,
                                     ),
                                   ),
                                 ],

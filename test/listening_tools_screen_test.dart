@@ -91,4 +91,62 @@ void main() {
       settings.dispose();
     },
   );
+
+  testWidgets(
+    'long multiline subtitles wrap naturally at 1.35x text scale without overflow',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({});
+      final settings = SettingsState(await AppPrefs.load());
+      final audio = TestAudio();
+      final player = PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: audio,
+      );
+      await player.playLocalFiles(
+        Work.fromJson({'id': 2, 'title': 'Multiline work'}),
+        {'track1': '/track1.mp3'},
+      );
+      final library = NotesLibrary();
+      const longCue =
+          '第一行很长的台词用来验证不会再被固定高度裁切\n'
+          '第二行继续延续对话内容以确保多行折行完整展示\n'
+          '第三行在放大字体倍数时依然可以完整阅读\n'
+          '第四行也不再被 maxLines 截断或触发溢出警告';
+      library.documents['subtitle:2:track1'] = {
+        'name': 'long.vtt',
+        'source': 'WEBVTT\n\n00:00:01.000 --> 00:00:08.000\n$longCue',
+        'offsetMs': 0,
+      };
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<PlayerState>.value(value: player),
+            ChangeNotifierProvider<LibraryState>.value(value: library),
+          ],
+          child: MaterialApp(
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: const TextScaler.linear(1.35),
+              ),
+              child: child!,
+            ),
+            home: const ListeningToolsScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final textWidget = tester.widget<Text>(find.text(longCue));
+      expect(textWidget.maxLines, isNull);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      player.dispose();
+      library.dispose();
+      settings.dispose();
+    },
+  );
 }

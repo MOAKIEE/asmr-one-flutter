@@ -26,10 +26,11 @@ import 'tag_browse_screen.dart';
 
 /// 作品详情页。
 class WorkDetailScreen extends StatefulWidget {
-  const WorkDetailScreen({super.key, required this.work});
+  const WorkDetailScreen({super.key, required this.work, this.api});
 
   /// 列表页传入的作品（可能是列表接口的精简数据，进入后会补全）。
   final Work work;
+  final ApiClient? api;
 
   @override
   State<WorkDetailScreen> createState() => _WorkDetailScreenState();
@@ -48,7 +49,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   String? _detailError;
   String? _trackError;
 
-  final ApiClient _api = ApiClient.instance;
+  late final ApiClient _api = widget.api ?? ApiClient.instance;
 
   @override
   void initState() {
@@ -230,10 +231,26 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           SliverAppBar(
             pinned: true,
             expandedHeight: 280,
-            title: Text(
-              _work.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            backgroundColor: theme.scaffoldBackgroundColor,
+            surfaceTintColor: Colors.transparent,
+            title: Builder(
+              builder: (ctx) {
+                final bar = ctx
+                    .dependOnInheritedWidgetOfExactType<
+                      FlexibleSpaceBarSettings
+                    >();
+                final collapsed =
+                    bar == null || bar.currentExtent <= bar.minExtent + 24;
+                return AnimatedOpacity(
+                  duration: const Duration(milliseconds: 160),
+                  opacity: collapsed ? 1 : 0,
+                  child: Text(
+                    _work.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              },
             ),
             flexibleSpace: FlexibleSpaceBar(
               background: _CoverBackdrop(work: _work),
@@ -388,7 +405,7 @@ class _CoverBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scaffold = Theme.of(context).scaffoldBackgroundColor;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -405,11 +422,12 @@ class _CoverBackdrop extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                scheme.surface.withValues(alpha: 0.25),
-                scheme.surface.withValues(alpha: 0.72),
-                scheme.surface,
+                scaffold.withValues(alpha: 0.52),
+                scaffold.withValues(alpha: 0.18),
+                scaffold.withValues(alpha: 0.72),
+                scaffold,
               ],
-              stops: const [0.0, 0.62, 1.0],
+              stops: const [0.0, 0.3, 0.68, 1.0],
             ),
           ),
         ),
@@ -580,23 +598,30 @@ class _HeaderCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                flex: 2,
+                flex: 3,
                 child: FilledButton.icon(
                   onPressed: onPlay,
                   icon: const Icon(Icons.play_arrow_rounded),
-                  label: Text(
-                    trackLoading
-                        ? l('common.loading')
-                        : '${l('action.play')}${trackCount > 0 ? ' ($trackCount)' : ''}',
+                  label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      trackLoading
+                          ? l('common.loading')
+                          : '${l('action.play')}${trackCount > 0 ? ' ($trackCount)' : ''}',
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
+                flex: 2,
                 child: OutlinedButton.icon(
                   onPressed: onShuffle,
                   icon: const Icon(Icons.shuffle_rounded, size: 18),
-                  label: Text(l('action.shuffle')),
+                  label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(l('action.shuffle')),
+                  ),
                 ),
               ),
             ],
@@ -626,7 +651,7 @@ class _HeaderCard extends StatelessWidget {
                     ? Icons.downloading_rounded
                     : Icons.download_outlined,
                 label: activeDownloads > 0
-                    ? '$activeDownloads'
+                    ? l('detail.downloadingCount', {'n': activeDownloads})
                     : l('action.download'),
                 active: activeDownloads > 0,
                 onTap: onDownload,
@@ -877,7 +902,7 @@ class _TrackList extends StatelessWidget {
               onPlay: () => onPlayIndex(i),
             ),
           );
-        } else {
+        } else if (node.isFolder || node.children.isNotEmpty) {
           rows.add(
             Padding(
               padding: EdgeInsets.fromLTRB(6.0 + depth * 14, 12, 0, 6),
@@ -892,8 +917,9 @@ class _TrackList extends StatelessWidget {
                   Expanded(
                     child: Text(
                       node.title,
-                      style: Theme.of(context).textTheme.labelMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ],
@@ -901,6 +927,40 @@ class _TrackList extends StatelessWidget {
             ),
           );
           walk(node.children, depth + 1);
+        } else {
+          final lower = node.title.toLowerCase();
+          final isSub =
+              lower.endsWith('.lrc') ||
+              lower.endsWith('.srt') ||
+              lower.endsWith('.vtt') ||
+              lower.endsWith('.ass');
+          rows.add(
+            Padding(
+              padding: EdgeInsets.fromLTRB(6.0 + depth * 14, 6, 6, 6),
+              child: Row(
+                children: [
+                  Icon(
+                    isSub
+                        ? Icons.subtitles_outlined
+                        : Icons.description_outlined,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      node.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
       }
     }

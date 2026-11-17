@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -73,71 +74,100 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
           ),
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(26, 8, 26, 20),
-              child: Column(
-                children: [
-                  const Spacer(flex: 2),
-                  Container(
-                    height: MediaQuery.sizeOf(context).height * 0.34,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.32),
-                          blurRadius: 28,
-                          offset: const Offset(0, 12),
-                        ),
-                      ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxHeight < 580;
+                final coverSize = math
+                    .min(
+                      constraints.maxHeight * (compact ? 0.3 : 0.34),
+                      constraints.maxWidth - 52,
+                    )
+                    .clamp(120.0, 320.0);
+
+                return SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    26,
+                    compact ? 4 : 8,
+                    26,
+                    compact ? 14 : 20,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight:
+                          (constraints.maxHeight - (compact ? 18 : 28))
+                              .clamp(0.0, double.infinity),
                     ),
-                    child: CoverImage(
-                      url: item.coverUrl,
-                      seedId: item.workId,
-                      radius: 24,
-                    ),
-                  ),
-                  const Spacer(flex: 2),
-                  Text(
-                    item.title,
-                    maxLines: 2,
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    item.folderLabel.isEmpty
-                        ? item.workTitle
-                        : '${item.workTitle} · ${item.folderLabel}',
-                    maxLines: 1,
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                  const SizedBox(height: 22),
-                  _ProgressBar(
-                    player: player,
-                    dragValue: _dragValue,
-                    onDrag: (v) => setState(() => _dragValue = v),
-                    onDragEnd: (v) {
-                      final total = player.player.duration;
-                      if (total != null && total.inMilliseconds > 0) {
-                        player.seek(
-                          Duration(
-                            milliseconds: (total.inMilliseconds * v).round(),
+                    child: IntrinsicHeight(
+                      child: Column(
+                        children: [
+                          const Spacer(flex: 2),
+                          Container(
+                            width: coverSize,
+                            height: coverSize,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.28),
+                                  blurRadius: 24,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
+                            ),
+                            child: CoverImage(
+                              url: item.coverUrl,
+                              seedId: item.workId,
+                              radius: 24,
+                            ),
                           ),
-                        );
-                      }
-                      setState(() => _dragValue = null);
-                    },
+                          const Spacer(flex: 2),
+                          Text(
+                            Fmt.stripExt(item.title),
+                            maxLines: 2,
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            item.folderLabel.isEmpty
+                                ? item.workTitle
+                                : '${item.workTitle} · ${item.folderLabel}',
+                            maxLines: 1,
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                          SizedBox(height: compact ? 14 : 22),
+                          _ProgressBar(
+                            player: player,
+                            dragValue: _dragValue,
+                            onDrag: (v) => setState(() => _dragValue = v),
+                            onDragEnd: (v) {
+                              final total = player.player.duration;
+                              if (total != null && total.inMilliseconds > 0) {
+                                player.seek(
+                                  Duration(
+                                    milliseconds: (total.inMilliseconds * v)
+                                        .round(),
+                                  ),
+                                );
+                              }
+                              setState(() => _dragValue = null);
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          _Controls(player: player),
+                          const Spacer(),
+                          const SizedBox(height: 8),
+                          _BottomActions(player: player),
+                        ],
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  _Controls(player: player),
-                  const Spacer(),
-                  _BottomActions(player: player),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ],
@@ -150,6 +180,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (_) => ChangeNotifierProvider<PlayerState>.value(
         value: player,
         child: const _QueueSheet(),
@@ -306,32 +337,43 @@ class _BottomActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
+    final lowQuality = context.watch<SettingsState>().preferLowQuality;
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _PillButton(
-          icon: Icons.speed_rounded,
-          label:
-              '${player.speed.toStringAsFixed(player.speed == player.speed.roundToDouble() ? 0 : 1)}x',
-          onTap: () => _showSpeedSheet(context, player),
+        Flexible(
+          child: _PillButton(
+            icon: Icons.speed_rounded,
+            label:
+                '${player.speed.toStringAsFixed(player.speed == player.speed.roundToDouble() ? 0 : 1)}x',
+            active: player.speed != 1.0,
+            onTap: () => _showSpeedSheet(context, player),
+          ),
         ),
-        _PillButton(
-          icon: Icons.bedtime_outlined,
-          label: player.stopAfterTrack
-              ? l('player.stopAfterTrack')
-              : player.sleepDeadline == null
-              ? l('player.sleep')
-              : '${player.sleepRemaining.inMinutes}m',
-          active: player.sleepDeadline != null || player.stopAfterTrack,
-          onTap: () => _showSleepSheet(context, player),
+        const SizedBox(width: 8),
+        Flexible(
+          child: _PillButton(
+            icon: Icons.bedtime_outlined,
+            label: player.stopAfterTrack
+                ? l('player.stopAfterTrack')
+                : player.sleepDeadline == null
+                ? l('player.sleep')
+                : '${player.sleepRemaining.inMinutes}m',
+            active: player.sleepDeadline != null || player.stopAfterTrack,
+            onTap: () => _showSleepSheet(context, player),
+          ),
         ),
-        _PillButton(
-          icon: Icons.high_quality_outlined,
-          label: context.watch<SettingsState>().preferLowQuality ? 'LQ' : 'HQ',
-          onTap: () {
-            final s = context.read<SettingsState>();
-            s.preferLowQuality = !s.preferLowQuality;
-          },
+        const SizedBox(width: 8),
+        Flexible(
+          child: _PillButton(
+            icon: Icons.high_quality_outlined,
+            label: lowQuality ? 'LQ' : 'HQ',
+            active: lowQuality,
+            onTap: () {
+              final s = context.read<SettingsState>();
+              s.preferLowQuality = !s.preferLowQuality;
+            },
+          ),
         ),
       ],
     );
@@ -340,37 +382,48 @@ class _BottomActions extends StatelessWidget {
   Future<void> _showSpeedSheet(BuildContext context, PlayerState player) async {
     await showModalBottomSheet<void>(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                L10n.of(sheetContext)('player.speed'),
-                style: Theme.of(sheetContext).textTheme.titleMedium,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) {
+        final maxH = MediaQuery.sizeOf(sheetContext).height * 0.78;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      L10n.of(sheetContext)('player.speed'),
+                      style: Theme.of(sheetContext).textTheme.titleMedium,
+                    ),
+                  ),
+                  for (final v in const [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0])
+                    ListTile(
+                      leading: Icon(
+                        player.speed == v
+                            ? Icons.radio_button_checked_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        color: player.speed == v
+                            ? Theme.of(sheetContext).colorScheme.primary
+                            : null,
+                      ),
+                      title: Text('${v}x'),
+                      onTap: () {
+                        player.setSpeed(v);
+                        Navigator.of(sheetContext).pop();
+                      },
+                    ),
+                  const SizedBox(height: 8),
+                ],
               ),
             ),
-            for (final v in const [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0])
-              ListTile(
-                leading: Icon(
-                  player.speed == v
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  color: player.speed == v
-                      ? Theme.of(sheetContext).colorScheme.primary
-                      : null,
-                ),
-                title: Text('${v}x'),
-                onTap: () {
-                  player.setSpeed(v);
-                  Navigator.of(sheetContext).pop();
-                },
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -378,50 +431,72 @@ class _BottomActions extends StatelessWidget {
     final l = L10n.of(context);
     await showModalBottomSheet<void>(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                l('player.sleep'),
-                style: Theme.of(sheetContext).textTheme.titleMedium,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) {
+        final maxH = MediaQuery.sizeOf(sheetContext).height * 0.82;
+        final scheme = Theme.of(sheetContext).colorScheme;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Text(
+                      l('player.sleep'),
+                      style: Theme.of(sheetContext).textTheme.titleMedium,
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.timer_off_outlined),
+                    title: Text(l('player.sleepOff')),
+                    trailing:
+                        player.sleepDeadline == null && !player.stopAfterTrack
+                        ? Icon(Icons.check_rounded, color: scheme.primary)
+                        : null,
+                    onTap: () {
+                      player.clearSleepTimer();
+                      Navigator.of(sheetContext).pop();
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.music_off),
+                    title: Text(l('player.stopAfterTrack')),
+                    trailing: player.stopAfterTrack
+                        ? Icon(Icons.check_rounded, color: scheme.primary)
+                        : null,
+                    onTap: () {
+                      player.setStopAfterTrack(true);
+                      Navigator.of(sheetContext).pop();
+                    },
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                    child: Text(
+                      l('player.fadeHint'),
+                      style: Theme.of(sheetContext).textTheme.bodySmall,
+                    ),
+                  ),
+                  for (final m in const [15, 30, 45, 60, 90])
+                    ListTile(
+                      leading: const Icon(Icons.bedtime_outlined),
+                      title: Text(l('player.sleepIn', {'n': m})),
+                      onTap: () {
+                        player.setSleepTimer(m);
+                        Navigator.of(sheetContext).pop();
+                      },
+                    ),
+                  const SizedBox(height: 8),
+                ],
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.timer_off_outlined),
-              title: Text(l('player.sleepOff')),
-              onTap: () {
-                player.clearSleepTimer();
-                Navigator.of(sheetContext).pop();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.music_off),
-              title: Text(l('player.stopAfterTrack')),
-              onTap: () {
-                player.setStopAfterTrack(true);
-                Navigator.of(sheetContext).pop();
-              },
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(l('player.fadeHint')),
-            ),
-            for (final m in const [15, 30, 45, 60, 90])
-              ListTile(
-                leading: const Icon(Icons.bedtime_outlined),
-                title: Text(l('player.sleepIn', {'n': m})),
-                onTap: () {
-                  player.setSleepTimer(m);
-                  Navigator.of(sheetContext).pop();
-                },
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -444,22 +519,28 @@ class _PillButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final color = active ? scheme.primary : scheme.onSurfaceVariant;
     return Material(
-      color: scheme.surfaceContainerHigh.withValues(alpha: 0.6),
+      color: active
+          ? scheme.primary.withValues(alpha: 0.14)
+          : scheme.surfaceContainerHigh.withValues(alpha: 0.72),
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 17, color: color),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelMedium
-                    ?.copyWith(color: color),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium
+                      ?.copyWith(color: color),
+                ),
               ),
             ],
           ),
@@ -486,7 +567,7 @@ class _QueueSheet extends StatelessWidget {
       builder: (context, controller) => Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 12, 8),
+            padding: const EdgeInsets.fromLTRB(20, 4, 8, 8),
             child: Row(
               children: [
                 Text(
@@ -499,8 +580,16 @@ class _QueueSheet extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
                 const Spacer(),
+                IconButton(
+                  tooltip: l('common.reset'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    player.stop();
+                  },
+                  icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+                ),
                 TextButton(
-                  onPressed: player.stop,
+                  onPressed: () => Navigator.of(context).pop(),
                   child: Text(l('common.close')),
                 ),
               ],
