@@ -19,8 +19,21 @@ class Fmt {
   /// 毫秒 -> 时间轴文案。
   static String position(Duration d) => duration(d.inMilliseconds / 1000);
 
-  /// 大数字：12345 -> `1.2万`；1200 -> `1.2k`。
-  static String count(int n) {
+  /// 大数字：中文/日文 `1.2万`，英文 `1.2k` / `1.2M`。
+  static String count(int n, {String languageCode = 'zh'}) {
+    if (languageCode == 'en') {
+      if (n >= 1000000000) {
+        return '${(n / 1000000000).toStringAsFixed(1)}B';
+      }
+      if (n >= 1000000) {
+        return '${(n / 1000000).toStringAsFixed(1)}M';
+      }
+      if (n >= 1000) {
+        final v = n / 1000;
+        return '${v >= 100 ? v.round() : v.toStringAsFixed(1)}k';
+      }
+      return '$n';
+    }
     if (n >= 100000000) return '${(n / 100000000).toStringAsFixed(1)}亿';
     if (n >= 10000) {
       final v = n / 10000;
@@ -51,11 +64,12 @@ class Fmt {
     return raw.replaceAll('-', '/');
   }
 
-  /// 相对时间：`3 天前` / `2 个月前`。
+  /// 相对时间：按语言返回 `3 天前` / `3d ago` / `3日前`。
   static String relative(
     String? raw, {
-    String today = '今天',
-    String yesterday = '昨天',
+    String? languageCode,
+    String? today,
+    String? yesterday,
   }) {
     if (raw == null || raw.isEmpty) return '—';
     final d = DateTime.tryParse(raw.length >= 10 ? raw.substring(0, 10) : raw);
@@ -66,11 +80,26 @@ class Fmt {
       now.month,
       now.day,
     ).difference(DateTime(d.year, d.month, d.day)).inDays;
-    if (diff <= 0) return today;
-    if (diff == 1) return yesterday;
-    if (diff < 30) return '$diff 天前';
-    if (diff < 365) return '${(diff / 30).floor()} 个月前';
-    return '${(diff / 365).floor()} 年前';
+    switch (languageCode) {
+      case 'en':
+        if (diff <= 0) return today ?? 'Today';
+        if (diff == 1) return yesterday ?? 'Yesterday';
+        if (diff < 30) return '${diff}d ago';
+        if (diff < 365) return '${(diff / 30).floor()}mo ago';
+        return '${(diff / 365).floor()}y ago';
+      case 'ja':
+        if (diff <= 0) return today ?? '今日';
+        if (diff == 1) return yesterday ?? '昨日';
+        if (diff < 30) return '$diff 日前';
+        if (diff < 365) return '${(diff / 30).floor()} か月前';
+        return '${(diff / 365).floor()} 年前';
+      default:
+        if (diff <= 0) return today ?? '今天';
+        if (diff == 1) return yesterday ?? '昨天';
+        if (diff < 30) return '$diff 天前';
+        if (diff < 365) return '${(diff / 30).floor()} 个月前';
+        return '${(diff / 365).floor()} 年前';
+    }
   }
 
   /// 字节 -> `1.2 GB`。

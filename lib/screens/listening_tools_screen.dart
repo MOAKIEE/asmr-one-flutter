@@ -57,6 +57,7 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
   }
 
   Future<void> _import() async {
+    final tooLargeMsg = L10n.of(context)('notes.tooLarge');
     final key = _notes.key;
     final file = await FilePicker.pickFile(
       type: FileType.custom,
@@ -64,7 +65,7 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
     );
     if (file == null) return;
     if ((await file.length() ?? 0) > 2 * 1024 * 1024) {
-      throw const FormatException('字幕超过 2 MB');
+      throw FormatException(tooLargeMsg);
     }
     final source = utf8.decode(await file.readAsBytes());
     if (key != _notes.key) return;

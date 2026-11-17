@@ -30,6 +30,7 @@ class WorkCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
+    final langCode = Localizations.localeOf(context).languageCode;
     final theme = Theme.of(context);
     final settings = context.watch<SettingsState>();
     final isFav = showFavoriteMark
@@ -147,7 +148,7 @@ class WorkCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 3),
                     Text(
-                      Fmt.count(work.dlCount),
+                      Fmt.count(work.dlCount, languageCode: langCode),
                       style: theme.textTheme.labelSmall,
                     ),
                     const Spacer(),
@@ -208,6 +209,7 @@ class WorkListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
+    final langCode = Localizations.localeOf(context).languageCode;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final settings = context.watch<SettingsState>();
@@ -286,7 +288,10 @@ class WorkListTile extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 3),
                                 Text(
-                                  Fmt.count(work.dlCount),
+                                  Fmt.count(
+                                    work.dlCount,
+                                    languageCode: langCode,
+                                  ),
                                   style: theme.textTheme.labelSmall,
                                 ),
                               ],

@@ -164,6 +164,7 @@ class _HomeHeader extends StatelessWidget {
     final l = L10n.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final fg = AppDecor.heroForeground(scheme);
     final topPadding = MediaQuery.paddingOf(context).top;
     final lang = _langOf(context);
     final hotTags = FeaturedTags.resolve();
@@ -184,12 +185,12 @@ class _HomeHeader extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: scheme.onPrimary.withValues(alpha: 0.18),
+                  color: fg.withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(
                   Icons.graphic_eq_rounded,
-                  color: scheme.onPrimary,
+                  color: fg,
                   size: 21,
                 ),
               ),
@@ -201,14 +202,14 @@ class _HomeHeader extends StatelessWidget {
                     Text(
                       l('app.name'),
                       style: theme.textTheme.titleMedium?.copyWith(
-                        color: scheme.onPrimary,
+                        color: fg,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                     Text(
                       l('app.tagline'),
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onPrimary.withValues(alpha: 0.82),
+                        color: fg.withValues(alpha: 0.82),
                       ),
                     ),
                   ],
@@ -220,8 +221,8 @@ class _HomeHeader extends StatelessWidget {
                   MaterialPageRoute(builder: (_) => const TagBrowseScreen()),
                 ),
                 style: IconButton.styleFrom(
-                  backgroundColor: scheme.onPrimary.withValues(alpha: 0.14),
-                  foregroundColor: scheme.onPrimary,
+                  backgroundColor: fg.withValues(alpha: 0.14),
+                  foregroundColor: fg,
                 ),
                 icon: const Icon(Icons.sell_outlined, size: 19),
               ),
@@ -231,7 +232,7 @@ class _HomeHeader extends StatelessWidget {
           Text(
             l('home.greeting'),
             style: theme.textTheme.headlineSmall?.copyWith(
-              color: scheme.onPrimary,
+              color: fg,
               fontSize: 23,
             ),
           ),
@@ -242,8 +243,8 @@ class _HomeHeader extends StatelessWidget {
                 child: FilledButton.icon(
                   onPressed: loadingRandom ? null : onRandom,
                   style: FilledButton.styleFrom(
-                    backgroundColor: scheme.onPrimary,
-                    foregroundColor: scheme.primary,
+                    backgroundColor: AppDecor.heroButtonBg(scheme),
+                    foregroundColor: AppDecor.heroButtonFg(scheme),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 12,
@@ -255,7 +256,7 @@ class _HomeHeader extends StatelessWidget {
                           height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: scheme.primary,
+                            color: AppDecor.heroButtonFg(scheme),
                           ),
                         )
                       : const Icon(Icons.shuffle_rounded, size: 18),
@@ -267,10 +268,10 @@ class _HomeHeader extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: onBrowseAll,
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: scheme.onPrimary,
-                    backgroundColor: scheme.onPrimary.withValues(alpha: 0.1),
+                    foregroundColor: fg,
+                    backgroundColor: fg.withValues(alpha: 0.1),
                     side: BorderSide(
-                      color: scheme.onPrimary.withValues(alpha: 0.45),
+                      color: fg.withValues(alpha: 0.4),
                     ),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -293,11 +294,11 @@ class _HomeHeader extends StatelessWidget {
               itemBuilder: (context, i) {
                 final tag = hotTags[i];
                 return Material(
-                  color: scheme.onPrimary.withValues(alpha: 0.16),
+                  color: fg.withValues(alpha: 0.14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(999),
                     side: BorderSide(
-                      color: scheme.onPrimary.withValues(alpha: 0.22),
+                      color: fg.withValues(alpha: 0.22),
                     ),
                   ),
                   child: InkWell(
@@ -316,7 +317,7 @@ class _HomeHeader extends StatelessWidget {
                         child: Text(
                           '# ${tag.label(lang)}',
                           style: theme.textTheme.labelSmall?.copyWith(
-                            color: scheme.onPrimary,
+                            color: fg,
                             fontWeight: FontWeight.w600,
                           ),
                         ),

@@ -142,7 +142,12 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
       return;
     }
     if (result.unplayable > 0) {
-      _toast('${result.unplayable} / ${_flatTracks.length} 首曲目需要登录后才能播放');
+      _toast(
+        l('detail.needLoginSomeTracks', {
+          'unplayable': result.unplayable,
+          'total': _flatTracks.length,
+        }),
+      );
     }
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
@@ -514,7 +519,11 @@ class _HeaderCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 3),
                         Text(
-                          Fmt.count(work.dlCount),
+                          Fmt.count(
+                            work.dlCount,
+                            languageCode:
+                                Localizations.localeOf(context).languageCode,
+                          ),
                           style: theme.textTheme.labelSmall,
                         ),
                         const SizedBox(width: 12),
@@ -703,11 +712,12 @@ class _InfoTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
+    final langCode = Localizations.localeOf(context).languageCode;
     final theme = Theme.of(context);
     final rows = <(String, String)>[
       (l('work.no'), work.workNo),
       (l('work.release'), Fmt.date(work.release)),
-      (l('work.created'), Fmt.relative(work.createDate)),
+      (l('work.created'), Fmt.relative(work.createDate, languageCode: langCode)),
       if ((work.duration ?? 0) > 0)
         (l('work.duration'), Fmt.duration(work.duration)),
       if (work.languageEditions.isNotEmpty)
@@ -1042,14 +1052,18 @@ class _ReviewList extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        r.userName ?? '匿名',
+                        r.userName ?? l('detail.anonymous'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelMedium,
                       ),
                     ),
                     Text(
-                      Fmt.relative(r.createdAt),
+                      Fmt.relative(
+                        r.createdAt,
+                        languageCode:
+                            Localizations.localeOf(context).languageCode,
+                      ),
                       style: Theme.of(context).textTheme.labelSmall,
                     ),
                   ],

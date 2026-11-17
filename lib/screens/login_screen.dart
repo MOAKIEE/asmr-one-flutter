@@ -58,30 +58,35 @@ class _LoginScreenState extends State<LoginScreen> {
                       gradient: AppDecor.heroGradient(scheme),
                       borderRadius: BorderRadius.circular(22),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.graphic_eq_rounded,
-                          color: scheme.onPrimary,
-                          size: 26,
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          l('app.name'),
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            color: scheme.onPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          l('library.loginHint'),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onPrimary.withValues(alpha: 0.85),
-                            height: 1.4,
-                          ),
-                        ),
-                      ],
+                    child: Builder(
+                      builder: (context) {
+                        final fg = AppDecor.heroForeground(scheme);
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.graphic_eq_rounded,
+                              color: fg,
+                              size: 26,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              l('app.name'),
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                color: fg,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              l('library.loginHint'),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: fg.withValues(alpha: 0.85),
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                   const SizedBox(height: 26),

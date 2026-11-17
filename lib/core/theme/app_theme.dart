@@ -12,12 +12,12 @@ class AppTheme {
   static const List<Color> accentChoices = [
     Color(0xFF7C5CFF), // 紫罗兰（默认）
     Color(0xFFFF6FB5), // 樱花粉
-    Color(0xFF4FC3F7), // 天空蓝
+    Color(0xFF38BDF8), // 天空蓝
     Color(0xFF3DDC97), // 薄荷绿
     Color(0xFFFFA85C), // 琥珀橙
     Color(0xFFFF5F6D), // 珊瑚红
-    Color(0xFFB388FF), // 淡紫
-    Color(0xFF64B5F6), // 靛蓝
+    Color(0xFF2DD4BF), // 松石青
+    Color(0xFFFACC15), // 琥珀金
   ];
 
   static const Color _darkBg = Color(0xFF0B0910);
@@ -278,45 +278,45 @@ class AppTheme {
     final variant = brightness == Brightness.dark
         ? const Color(0xFFA9A2BC)
         : const Color(0xFF6B6480);
-    return base
-        .apply(
-          bodyColor: onSurface,
-          displayColor: onSurface,
-          fontFamilyFallback: const [
-            'Noto Sans CJK SC',
-            'Noto Sans SC',
-            'Microsoft YaHei',
-            'Source Han Sans SC',
-            'PingFang SC',
-          ],
-        )
-        .copyWith(
-          headlineSmall: base.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.4,
-            color: onSurface,
-          ),
-          titleLarge: base.titleLarge?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.3,
-            color: onSurface,
-          ),
-          titleMedium: base.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: onSurface,
-          ),
-          titleSmall: base.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: onSurface,
-          ),
-          bodyMedium: base.bodyMedium?.copyWith(color: onSurface),
-          bodySmall: base.bodySmall?.copyWith(color: variant),
-          labelMedium: base.labelMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: variant,
-          ),
-          labelSmall: base.labelSmall?.copyWith(color: variant),
-        );
+    // 先统一注入字体颜色与 CJK 回退链，再基于 applied 覆写字重与细节，避免丢失回退字体。
+    final applied = base.apply(
+      bodyColor: onSurface,
+      displayColor: onSurface,
+      fontFamilyFallback: const [
+        'Noto Sans CJK SC',
+        'Noto Sans SC',
+        'Microsoft YaHei',
+        'Source Han Sans SC',
+        'PingFang SC',
+      ],
+    );
+    return applied.copyWith(
+      headlineSmall: applied.headlineSmall?.copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.4,
+        color: onSurface,
+      ),
+      titleLarge: applied.titleLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.3,
+        color: onSurface,
+      ),
+      titleMedium: applied.titleMedium?.copyWith(
+        fontWeight: FontWeight.w600,
+        color: onSurface,
+      ),
+      titleSmall: applied.titleSmall?.copyWith(
+        fontWeight: FontWeight.w600,
+        color: onSurface,
+      ),
+      bodyMedium: applied.bodyMedium?.copyWith(color: onSurface),
+      bodySmall: applied.bodySmall?.copyWith(color: variant),
+      labelMedium: applied.labelMedium?.copyWith(
+        fontWeight: FontWeight.w600,
+        color: variant,
+      ),
+      labelSmall: applied.labelSmall?.copyWith(color: variant),
+    );
   }
 }
 
@@ -327,8 +327,27 @@ class AppDecor {
   static const double radiusCard = 20;
   static const double radiusSheet = 28;
 
-  /// 主色系渐变，用于首页头部与登录/账号橫幅，确保文字对比度一致。
+  /// 主色系渐变，用于首页头部与登录/账号横幅，深浅主题下均保证文字可读且不刺眼。
   static LinearGradient heroGradient(ColorScheme scheme) {
+    if (scheme.brightness == Brightness.dark) {
+      final start = Color.lerp(scheme.primaryContainer, scheme.primary, 0.16)!;
+      final mid = Color.lerp(
+        scheme.primaryContainer,
+        scheme.tertiaryContainer,
+        0.48,
+      )!;
+      final end = Color.lerp(
+        scheme.secondaryContainer,
+        scheme.primaryContainer,
+        0.35,
+      )!;
+      return LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [start, mid, end],
+        stops: const [0.0, 0.55, 1.0],
+      );
+    }
     final start = scheme.primary;
     final mid = Color.lerp(scheme.primary, scheme.tertiary, 0.45)!;
     final end = Color.lerp(scheme.primary, scheme.secondary, 0.72)!;
@@ -339,6 +358,20 @@ class AppDecor {
       stops: const [0.0, 0.55, 1.0],
     );
   }
+
+  /// 与 [heroGradient] 配套的前景文字与图标色。
+  static Color heroForeground(ColorScheme scheme) =>
+      scheme.brightness == Brightness.dark
+      ? scheme.onPrimaryContainer
+      : scheme.onPrimary;
+
+  /// 与 [heroGradient] 配套的主按钮背景色。
+  static Color heroButtonBg(ColorScheme scheme) =>
+      scheme.brightness == Brightness.dark ? scheme.primary : scheme.onPrimary;
+
+  /// 与 [heroGradient] 配套的主按钮前景色。
+  static Color heroButtonFg(ColorScheme scheme) =>
+      scheme.brightness == Brightness.dark ? scheme.onPrimary : scheme.primary;
 
   /// 分组容器装饰（用于设置页、我的页列表组、详情信息卡等）。
   static BoxDecoration groupBox(ColorScheme scheme, {double radius = 20}) =>

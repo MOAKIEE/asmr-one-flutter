@@ -196,6 +196,7 @@ class _AccountCard extends StatelessWidget {
     final scheme = theme.colorScheme;
 
     if (!auth.hasToken) {
+      final fg = AppDecor.heroForeground(scheme);
       return Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
@@ -209,15 +210,13 @@ class _AccountCard extends StatelessWidget {
               children: [
                 Icon(
                   Icons.person_outline_rounded,
-                  color: scheme.onPrimary,
+                  color: fg,
                   size: 22,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   l('library.notLoggedIn'),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: scheme.onPrimary,
-                  ),
+                  style: theme.textTheme.titleMedium?.copyWith(color: fg),
                 ),
               ],
             ),
@@ -225,7 +224,7 @@ class _AccountCard extends StatelessWidget {
             Text(
               l('library.loginHint'),
               style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onPrimary.withValues(alpha: 0.85),
+                color: fg.withValues(alpha: 0.85),
               ),
             ),
             const SizedBox(height: 14),
@@ -233,8 +232,8 @@ class _AccountCard extends StatelessWidget {
               onPressed: () => Navigator.of(context)
                   .push(MaterialPageRoute(builder: (_) => const LoginScreen())),
               style: FilledButton.styleFrom(
-                backgroundColor: scheme.onPrimary,
-                foregroundColor: scheme.primary,
+                backgroundColor: AppDecor.heroButtonBg(scheme),
+                foregroundColor: AppDecor.heroButtonFg(scheme),
               ),
               icon: const Icon(Icons.login_rounded, size: 18),
               label: Text(l('auth.login')),

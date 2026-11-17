@@ -1,9 +1,12 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:asmr_one/core/models/common.dart';
 import 'package:asmr_one/core/models/track.dart';
 import 'package:asmr_one/core/models/work.dart';
+import 'package:asmr_one/core/theme/app_theme.dart';
 import 'package:asmr_one/core/utils/formatters.dart';
+import 'package:asmr_one/l10n/app_localizations.dart';
 
 /// 这些用例锁定住与 asmr.one 接口之间的数据契约：
 /// 接口偶发地用 int / double / String 混用同一字段，
@@ -154,6 +157,14 @@ void main() {
       expect(Fmt.count(999), '999');
       expect(Fmt.count(1200), '1.2k');
       expect(Fmt.count(148637), '14.9万');
+      expect(Fmt.count(148637, languageCode: 'en'), '149k');
+      expect(Fmt.count(2500000, languageCode: 'en'), '2.5M');
+    });
+
+    test('相对时间支持多语言', () {
+      expect(Fmt.relative(null), '—');
+      expect(Fmt.relative('2000-01-01', languageCode: 'en'), endsWith('y ago'));
+      expect(Fmt.relative('2000-01-01', languageCode: 'ja'), endsWith('年前'));
     });
 
     test('价格', () {
@@ -165,5 +176,31 @@ void main() {
       expect(Fmt.stripExt('01_开场.mp3'), '01_开场');
       expect(Fmt.stripExt('cover.jpg'), 'cover.jpg');
     });
+  });
+
+  test('主题字体回退链与三语退出文案完整', () {
+    final theme = AppTheme.build(
+      brightness: Brightness.dark,
+      seed: AppTheme.accentChoices.first,
+    );
+    for (final style in [
+      theme.textTheme.headlineSmall,
+      theme.textTheme.titleLarge,
+      theme.textTheme.titleMedium,
+      theme.textTheme.titleSmall,
+      theme.textTheme.bodyMedium,
+      theme.textTheme.bodySmall,
+      theme.textTheme.labelMedium,
+      theme.textTheme.labelSmall,
+      theme.appBarTheme.titleTextStyle,
+      theme.chipTheme.labelStyle,
+    ]) {
+      expect(style?.fontFamilyFallback, isNotEmpty);
+    }
+    for (final locale in L10n.supportedLocales) {
+      final l = L10n.forLocale(locale);
+      expect(l('library.logout'), isNot('library.logout'));
+      expect(l('common.refresh'), isNot('common.refresh'));
+    }
   });
 }
