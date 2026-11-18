@@ -105,6 +105,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             width: coverSize,
                             height: coverSize,
                             decoration: BoxDecoration(
+                              color: scheme.surfaceContainer,
                               borderRadius: BorderRadius.circular(24),
                               boxShadow: [
                                 BoxShadow(
@@ -350,7 +351,7 @@ class _BottomActions extends StatelessWidget {
             onTap: () => _showSpeedSheet(context, player),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         Flexible(
           child: _PillButton(
             icon: Icons.bedtime_outlined,
@@ -363,7 +364,7 @@ class _BottomActions extends StatelessWidget {
             onTap: () => _showSleepSheet(context, player),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         Flexible(
           child: _PillButton(
             icon: Icons.high_quality_outlined,
@@ -527,19 +528,21 @@ class _PillButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 17, color: color),
-              const SizedBox(width: 5),
+              const SizedBox(width: 4),
               Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelMedium
-                      ?.copyWith(color: color),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.labelMedium
+                        ?.copyWith(color: color),
+                  ),
                 ),
               ),
             ],

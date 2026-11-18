@@ -203,4 +203,44 @@ void main() {
       expect(l('common.refresh'), isNot('common.refresh'));
     }
   });
+
+  testWidgets('FilterChip 与 ChoiceChip 选中态使用高对比前景色', (tester) async {
+    for (final brightness in Brightness.values) {
+      final theme = AppTheme.build(
+        brightness: brightness,
+        seed: AppTheme.accentChoices.first,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          key: ValueKey(brightness),
+          theme: theme,
+          home: Scaffold(
+            body: Row(
+              children: [
+                FilterChip(
+                  label: const Text('跟随播放'),
+                  selected: true,
+                  onSelected: (_) {},
+                ),
+                ChoiceChip(
+                  label: const Text('全部'),
+                  selected: true,
+                  onSelected: (_) {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final filterStyle = DefaultTextStyle.of(
+        tester.element(find.text('跟随播放')),
+      ).style;
+      final choiceStyle = DefaultTextStyle.of(
+        tester.element(find.text('全部')),
+      ).style;
+      expect(filterStyle.color, theme.colorScheme.onPrimary);
+      expect(choiceStyle.color, theme.colorScheme.onPrimary);
+    }
+  });
 }

@@ -50,15 +50,33 @@ class SettingsScreen extends StatelessWidget {
                     segments: [
                       ButtonSegment(
                         value: ThemeMode.system,
-                        label: Text(l('settings.theme.system')),
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            l('settings.theme.system'),
+                            maxLines: 1,
+                          ),
+                        ),
                       ),
                       ButtonSegment(
                         value: ThemeMode.light,
-                        label: Text(l('settings.theme.light')),
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            l('settings.theme.light'),
+                            maxLines: 1,
+                          ),
+                        ),
                       ),
                       ButtonSegment(
                         value: ThemeMode.dark,
-                        label: Text(l('settings.theme.dark')),
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            l('settings.theme.dark'),
+                            maxLines: 1,
+                          ),
+                        ),
                       ),
                     ],
                     selected: {settings.themeMode},
