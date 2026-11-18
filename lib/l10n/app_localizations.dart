@@ -228,6 +228,8 @@ const Map<String, String> _zh = {
   'library.loginHint': '登录后可同步云端收藏、评论与播放列表',
   'library.emptyFavorites': '还没有收藏任何作品',
   'library.emptyHistory': '还没有收听过任何作品',
+  'library.clearFavorites': '清空全部收藏',
+  'library.clearFavoritesConfirm': '确定要清空全部收藏吗？不会影响历史、列表、进度、书签或下载文件，且不可恢复。',
 
   'playlist.title': '播放列表',
   'playlist.create': '新建列表',
@@ -276,7 +278,8 @@ const Map<String, String> _zh = {
   'settings.clearCache': '清除图片缓存',
   'settings.cacheCleared': '缓存已清除',
   'settings.clearData': '清除本地数据',
-  'settings.clearDataConfirm': '将删除全部收藏、历史、本地列表与下载记录，且不可恢复。',
+  'settings.clearDataConfirm':
+      '将删除全部收藏、收听与搜索历史、本地列表、收听进度、书签、导入的字幕，以及下载记录与音频文件，且不可恢复。',
   'settings.cleared': '本地数据已清除',
   'settings.about': '关于',
   'settings.version': '版本',
@@ -496,6 +499,9 @@ const Map<String, String> _ja = {
   'library.loginHint': 'ログインするとクラウドのリストやレビューを同期できます',
   'library.emptyFavorites': 'お気に入りはまだありません',
   'library.emptyHistory': '再生履歴はまだありません',
+  'library.clearFavorites': 'お気に入りをすべて削除',
+  'library.clearFavoritesConfirm':
+      'すべてのお気に入りを削除しますか？履歴・リスト・再生位置・ブックマーク・ダウンロードファイルは残り、元に戻せません。',
 
   'playlist.title': '再生リスト',
   'playlist.create': 'リストを作成',
@@ -544,7 +550,8 @@ const Map<String, String> _ja = {
   'settings.clearCache': '画像キャッシュを削除',
   'settings.cacheCleared': 'キャッシュを削除しました',
   'settings.clearData': 'ローカルデータを削除',
-  'settings.clearDataConfirm': 'お気に入り・履歴・リスト・ダウンロードを削除します。元に戻せません。',
+  'settings.clearDataConfirm':
+      'お気に入り・再生履歴・検索履歴・ローカルリスト・再生位置・ブックマーク・読み込んだ字幕・ダウンロード記録と音声ファイルをすべて削除します。元に戻せません。',
   'settings.cleared': 'ローカルデータを削除しました',
   'settings.about': 'このアプリについて',
   'settings.version': 'バージョン',
@@ -764,6 +771,9 @@ const Map<String, String> _en = {
   'library.loginHint': 'Sign in to sync cloud playlists and reviews',
   'library.emptyFavorites': 'No favorites yet',
   'library.emptyHistory': 'Nothing played yet',
+  'library.clearFavorites': 'Clear all favorites',
+  'library.clearFavoritesConfirm':
+      'Remove all favorites? History, playlists, progress, bookmarks, and downloaded files are kept. This cannot be undone.',
 
   'playlist.title': 'Playlists',
   'playlist.create': 'New playlist',
@@ -813,7 +823,8 @@ const Map<String, String> _en = {
   'settings.clearCache': 'Clear image cache',
   'settings.cacheCleared': 'Cache cleared',
   'settings.clearData': 'Clear local data',
-  'settings.clearDataConfirm': 'This deletes all favorites, history, local playlists and downloads. It cannot be undone.',
+  'settings.clearDataConfirm':
+      'Deletes all favorites, listening and search history, local playlists, playback progress, bookmarks, imported subtitles, download records, and audio files. This cannot be undone.',
   'settings.cleared': 'Local data cleared',
   'settings.about': 'About',
   'settings.version': 'Version',

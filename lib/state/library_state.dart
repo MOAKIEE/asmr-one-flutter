@@ -71,6 +71,13 @@ class LibraryState extends ChangeNotifier {
     return nowFav;
   });
 
+  Future<void> clearFavorites() => _serial(() async {
+    await _db.clearFavorites();
+    _favorites = const [];
+    _favoriteIds = {};
+    notifyListeners();
+  });
+
   // ---------------------------------------------------------------------------
   // 历史
   // ---------------------------------------------------------------------------

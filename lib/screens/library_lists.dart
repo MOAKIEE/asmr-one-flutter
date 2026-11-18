@@ -28,7 +28,7 @@ class FavoritesScreen extends StatelessWidget {
         actions: [
           if (works.isNotEmpty)
             IconButton(
-              tooltip: l('settings.clearData'),
+              tooltip: l('library.clearFavorites'),
               onPressed: () => _confirmClear(context, library),
               icon: const Icon(Icons.delete_sweep_outlined),
             ),
@@ -52,8 +52,8 @@ class FavoritesScreen extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(l('library.favorites')),
-        content: Text(l('settings.clearDataConfirm')),
+        title: Text(l('library.clearFavorites')),
+        content: Text(l('library.clearFavoritesConfirm')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -67,11 +67,7 @@ class FavoritesScreen extends StatelessWidget {
       ),
     );
     if (ok != true) return;
-    // 先取快照，避免在 await 之后再次触碰 context。
-    final snapshot = [...library.favorites];
-    for (final w in snapshot) {
-      await library.toggleFavorite(w);
-    }
+    await library.clearFavorites();
   }
 
   void _showActions(
