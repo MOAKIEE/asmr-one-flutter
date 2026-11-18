@@ -40,11 +40,20 @@
 flutter pub get
 flutter analyze                       # 静态检查，当前 0 issue
 flutter test                          # 数据契约与格式化单元测试
-flutter build apk --release           # 产物约 56 MB
+flutter build apk --debug             # 本机调试包（debug 签名）
+flutter build apk --release           # 正式发布包（需配置签名，产物约 56 MB）
 ```
 
-> `release` 构建沿用 Flutter 模板的 debug 签名，仅供本机测试安装。
-> 正式分发请自行生成 keystore 并配置 `android/key.properties`。
+> `release` 构建强制从 `android/key.properties` 读取正式签名配置，缺少密钥配置或 keystore 文件时会直接报错，不会回退到 debug 签名。
+>
+> `android/key.properties` 示例（已加入 `.gitignore`，切勿提交）：
+>
+> ```properties
+> storeFile=upload-keystore.jks
+> storePassword=你的仓库密码
+> keyAlias=upload
+> keyPassword=你的密钥密码
+> ```
 
 ## 项目结构
 
