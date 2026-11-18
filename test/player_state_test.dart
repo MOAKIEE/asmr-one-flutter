@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:asmr_one/core/api/api_client.dart';
+import 'package:asmr_one/core/models/track.dart';
 import 'package:asmr_one/core/models/work.dart';
 import 'package:asmr_one/core/storage/app_prefs.dart';
 import 'package:asmr_one/core/storage/library_db.dart';
@@ -9,10 +11,13 @@ import 'package:asmr_one/state/player_state.dart' as app;
 import 'package:asmr_one/state/settings_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class TestLibrary implements LibraryState {
   int saved = 12000;
+  @override
+  Future<Map<String, String>> downloadedPaths(int workId) async => {};
   @override
   Future<int> progressFor(String hash) async => saved;
   @override
@@ -322,4 +327,214 @@ void main() {
     player.dispose();
     settings.dispose();
   });
+
+  test(
+    'media item ids exclude auth tokens, disambiguate missing hashes, and support background track skipping',
+    () async {
+      const fakeToken = 'secret-token-for-test';
+      SharedPreferences.setMockInitialValues({'auth.token': fakeToken});
+      final prefs = await AppPrefs.load();
+      final settings = SettingsState(prefs);
+      final api = ApiClient()..attachPrefs(prefs);
+      final audio = TestAudio();
+      final library = TestLibrary()..saved = 0;
+      final player = app.PlayerState(
+        settings: settings,
+        library: library,
+        audioPlayer: audio,
+        api: api,
+      );
+
+      final work = Work.fromJson({'id': 10, 'title': 'Paid work'});
+      final tracks = [
+        // 付费回退曲目：无 mediaStreamUrl，靠 mediaStreamUrl(hash) 带上 token
+        TrackNode.fromJson({
+          'type': 'audio',
+          'title': '01_intro.mp3',
+          'hash': '10/0',
+        }).flatten().single,
+        TrackNode.fromJson({
+          'type': 'audio',
+          'title': '02_main.mp3',
+          'hash': '10/1',
+        }).flatten().single,
+        // 无 hash 曲目（带查询参数地址），验证队列内唯一标识不泄露 URL
+        TrackNode.fromJson({
+          'type': 'audio',
+          'title': '03_bonus.mp3',
+          'mediaStreamUrl': 'https://cdn.example.invalid/bonus.mp3?token=$fakeToken',
+        }).flatten().single,
+        TrackNode.fromJson({
+          'type': 'audio',
+          'title': '04_outro.mp3',
+          'mediaStreamUrl': 'https://cdn.example.invalid/outro.mp3?token=$fakeToken',
+        }).flatten().single,
+      ];
+
+      final res = await player.playWork(work, tracks);
+      expect(res.queued, 4);
+      expect(res.unplayable, 0);
+
+      final mediaItems = audio.sources
+          .cast<UriAudioSource>()
+          .map((s) => s.tag as MediaItem)
+          .toList();
+      final uris = audio.sources
+          .cast<UriAudioSource>()
+          .map((s) => s.uri.toString())
+          .toList();
+
+      // 音频数据源仍保留凭据 URI
+      expect(uris[0], contains('token=$fakeToken'));
+      expect(uris[1], contains('token=$fakeToken'));
+
+      // 当前与全部队列 MediaItem.id 均不含令牌且彼此唯一
+      for (final item in mediaItems) {
+        expect(item.id, isNot(contains(fakeToken)));
+        expect(item.id, isNot(contains('http')));
+      }
+      expect(mediaItems.map((e) => e.id).toSet(), hasLength(4));
+      expect(mediaItems[0].id, 'work:10:hash:10/0');
+      expect(mediaItems[1].id, 'work:10:hash:10/1');
+      expect(mediaItems[2].id, 'work:10:track:2');
+      expect(mediaItems[3].id, 'work:10:track:3');
+
+      // 当前媒体项也不含令牌，且模拟后台切歌正常
+      expect(mediaItems[audio.index!].id, 'work:10:hash:10/0');
+      await player.next();
+      await Future<void>.delayed(Duration.zero);
+      expect(player.currentIndex, 1);
+      expect(player.currentItem?.hash, '10/1');
+      expect(mediaItems[audio.index!].id, 'work:10:hash:10/1');
+
+      await player.previous();
+      await Future<void>.delayed(Duration.zero);
+      expect(player.currentIndex, 0);
+      expect(mediaItems[audio.index!].id, 'work:10:hash:10/0');
+
+      // 单曲模式下无 hash 曲目仍保留其在原队列中的唯一索引标识
+      settings.autoPlayNext = false;
+      await Future<void>.delayed(Duration.zero);
+      await player.seekToIndex(3);
+      await Future<void>.delayed(Duration.zero);
+      expect(audio.sources, hasLength(1));
+      final singleItem = (audio.sources.single as UriAudioSource).tag as MediaItem;
+      expect(singleItem.id, 'work:10:track:3');
+      expect(singleItem.id, isNot(contains(fakeToken)));
+
+      player.dispose();
+      settings.dispose();
+    },
+  );
+
+  test(
+    'removing a track while paused persists the updated queue across restart',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = SettingsState(await AppPrefs.load());
+      final dir = await Directory.systemTemp.createTemp('asmr-remove-paused-');
+      final fileA = await File('${dir.path}/a.mp3').writeAsString('a');
+      final fileB = await File('${dir.path}/b.mp3').writeAsString('b');
+      final fileC = await File('${dir.path}/c.mp3').writeAsString('c');
+      Object? session;
+      final audio = TestAudio();
+      final library = TestLibrary()..saved = 0;
+      final player = app.PlayerState(
+        settings: settings,
+        library: library,
+        audioPlayer: audio,
+        writeSession: (value) async {
+          session = value;
+        },
+      );
+
+      await player.playLocalFiles(
+        Work.fromJson({'id': 7, 'title': 'Three tracks'}),
+        {'a': fileA.path, 'b': fileB.path, 'c': fileC.path},
+        metadata: [
+          DownloadRow(workId: 7, hash: 'a', title: 'Track 1', filePath: fileA.path, trackIndex: 0),
+          DownloadRow(workId: 7, hash: 'b', title: 'Track 2', filePath: fileB.path, trackIndex: 1),
+          DownloadRow(workId: 7, hash: 'c', title: 'Track 3', filePath: fileC.path, trackIndex: 2),
+        ],
+      );
+      await player.seekToIndex(1);
+      await Future<void>.delayed(Duration.zero);
+      audio.position = const Duration(seconds: 23);
+      await player.pause();
+      expect(player.playing, isFalse);
+
+      // 暂停状态下移除第一首曲目后直接结束进程
+      await player.removeFromQueue(0);
+      expect(player.queue.map((e) => e.title), ['Track 2', 'Track 3']);
+      expect(player.currentIndex, 0);
+      player.dispose();
+
+      // 重建播放器并恢复会话
+      final restoredAudio = TestAudio();
+      final restored = app.PlayerState(
+        settings: settings,
+        library: library,
+        audioPlayer: restoredAudio,
+        readSession: () async => session,
+      );
+      await restored.restoreSession();
+
+      expect(restored.queue.map((e) => e.title), ['Track 2', 'Track 3']);
+      expect(restored.currentIndex, 0);
+      expect(restored.currentItem?.hash, 'b');
+      expect(restoredAudio.position, const Duration(seconds: 23));
+      expect(restoredAudio.playCalls, 0);
+
+      restored.dispose();
+      settings.dispose();
+      await dir.delete(recursive: true);
+    },
+  );
+
+  test(
+    'playWork computes start index correctly when earlier tracks are unplayable',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await AppPrefs.load();
+      final settings = SettingsState(prefs);
+      final api = ApiClient()..attachPrefs(prefs);
+      final audio = TestAudio();
+      final library = TestLibrary()..saved = 0;
+      final player = app.PlayerState(
+        settings: settings,
+        library: library,
+        audioPlayer: audio,
+        api: api,
+      );
+
+      final tracks = [
+        // 无 hash 且无直链 -> 不可播放
+        TrackNode.fromJson({'type': 'audio', 'title': 'unplayable.mp3'}).flatten().single,
+        TrackNode.fromJson({
+          'type': 'audio',
+          'title': 'track_a.mp3',
+          'mediaStreamUrl': 'https://cdn.example.invalid/a.mp3',
+        }).flatten().single,
+        TrackNode.fromJson({
+          'type': 'audio',
+          'title': 'track_b.mp3',
+          'mediaStreamUrl': 'https://cdn.example.invalid/b.mp3',
+        }).flatten().single,
+      ];
+
+      final result = await player.playWork(
+        Work.fromJson({'id': 9, 'title': 'Filtered start'}),
+        tracks,
+        startIndex: 2,
+      );
+
+      expect(result.queued, 2);
+      expect(result.unplayable, 1);
+      expect(player.currentIndex, 1);
+      expect(player.currentItem?.title, 'track_b.mp3');
+
+      player.dispose();
+      settings.dispose();
+    },
+  );
 }

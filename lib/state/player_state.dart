@@ -54,12 +54,14 @@ class PlayerState extends ChangeNotifier {
     required SettingsState settings,
     required LibraryState library,
     ja.AudioPlayer? audioPlayer,
+    ApiClient? api,
     this.readSession,
     this.writeSession,
     DateTime Function()? now,
   }) : _settings = settings,
        _now = now ?? DateTime.now,
        _library = library,
+       _api = api ?? ApiClient.instance,
        _player = audioPlayer ?? ja.AudioPlayer() {
     _autoPlayNext = settings.autoPlayNext;
     _settings.addListener(_settingsChanged);
@@ -69,7 +71,7 @@ class PlayerState extends ChangeNotifier {
 
   final SettingsState _settings;
   final LibraryState _library;
-  final ApiClient _api = ApiClient.instance;
+  final ApiClient _api;
 
   final ja.AudioPlayer _player;
   final DateTime Function() _now;
@@ -407,8 +409,14 @@ class PlayerState extends ChangeNotifier {
             ? ja.LoopMode.off
             : _loopMode,
       );
+      final ids = _mediaIds(items);
       await _player.setAudioSources(
-        (_singleSource ? [items[index]] : items).map(_toSource).toList(),
+        _singleSource
+            ? [_toSource(items[index], ids[index])]
+            : [
+                for (var i = 0; i < items.length; i++)
+                  _toSource(items[i], ids[i]),
+              ],
         initialIndex: _singleSource ? 0 : index,
         initialPosition: position,
       );
@@ -477,7 +485,8 @@ class PlayerState extends ChangeNotifier {
     final items = <PlayItem>[];
     var unplayable = 0;
     var selectedIndex = 0;
-    for (final t in tracks) {
+    for (var i = 0; i < tracks.length; i++) {
+      final t = tracks[i];
       final hash = t.hash;
       final local = hash == null ? null : localPaths[hash];
       final url = (local != null && local.isNotEmpty)
@@ -490,7 +499,7 @@ class PlayerState extends ChangeNotifier {
         unplayable++;
         continue;
       }
-      if (tracks.indexOf(t) < startIndex) selectedIndex++;
+      if (i < startIndex) selectedIndex++;
       items.add(
         PlayItem(
           workId: work.id,
@@ -667,12 +676,31 @@ class PlayerState extends ChangeNotifier {
     }
   }
 
-  ja.AudioSource _toSource(PlayItem item) {
+  List<String> _mediaIds(List<PlayItem> items) {
+    final seen = <String>{};
+    return [
+      for (var i = 0; i < items.length; i++)
+        _uniqueMediaId(items[i], i, seen),
+    ];
+  }
+
+  String _uniqueMediaId(PlayItem item, int index, Set<String> seen) {
+    final hash = item.hash;
+    final base = (hash != null && hash.isNotEmpty)
+        ? 'work:${item.workId}:hash:$hash'
+        : 'work:${item.workId}:track:$index';
+    if (seen.add(base)) return base;
+    final unique = '$base#$index';
+    seen.add(unique);
+    return unique;
+  }
+
+  ja.AudioSource _toSource(PlayItem item, String mediaId) {
     final uri = item.isLocal ? Uri.file(item.localPath!) : Uri.parse(item.url);
     return ja.AudioSource.uri(
       uri,
       tag: MediaItem(
-        id: item.isLocal ? 'local:${item.localPath}' : item.url,
+        id: mediaId,
         title: item.title,
         album: item.workTitle,
         artist: item.circleName.isEmpty ? null : item.circleName,
@@ -795,6 +823,7 @@ class PlayerState extends ChangeNotifier {
     _queue = next;
     try {
       await _setSources(next, resumeIndex, position);
+      await _persistSession();
       if (wasPlaying) await _player.play();
     } catch (e) {
       _error = '更新队列失败：$e';
