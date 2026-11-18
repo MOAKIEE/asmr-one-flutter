@@ -228,7 +228,7 @@ class ApiClient {
   /// 作品列表 / 条件筛选。
   Future<WorksPage> fetchWorks(WorkQuery query) async {
     final data = await _get('/api/works', query: query.toQueryParameters());
-    return WorksPage.fromJson(asMap(data));
+    return WorksPage.fromJson(asMap(data), requestedPageSize: query.pageSize);
   }
 
   /// 随机的「随便听听」，走 random 排序 + 首页偏移。
@@ -300,7 +300,7 @@ class ApiClient {
         if (nsfw != null) 'nsfw': nsfw ? 'true' : 'false',
       },
     );
-    return WorksPage.fromJson(asMap(data));
+    return WorksPage.fromJson(asMap(data), requestedPageSize: pageSize);
   }
 
   // ---------------------------------------------------------------------------

@@ -298,13 +298,23 @@ class WorksPage {
 
   int get maxPage => pageSize <= 0 ? 1 : (totalCount / pageSize).ceil();
 
-  factory WorksPage.fromJson(Map<String, dynamic> json) {
+  factory WorksPage.fromJson(
+    Map<String, dynamic> json, {
+    int? requestedPageSize,
+  }) {
     final list = asMapList(json['works']).map(Work.fromJson).toList();
+    final pagination = asMap(json['pagination']);
     return WorksPage(
       works: list,
-      page: asInt(json['page'], 1),
-      pageSize: asInt(json['pageSize'], list.isEmpty ? 20 : list.length),
-      totalCount: asInt(json['totalCount'], list.length),
+      page: asInt(json['page'] ?? pagination['currentPage'], 1),
+      pageSize: asInt(
+        json['pageSize'] ?? pagination['pageSize'],
+        requestedPageSize ?? (list.isEmpty ? 20 : list.length),
+      ),
+      totalCount: asInt(
+        json['totalCount'] ?? pagination['totalCount'],
+        list.length,
+      ),
     );
   }
 
