@@ -389,11 +389,43 @@ class LibraryDb {
     return rows.isEmpty ? null : jsonDecode(rows.first['value'] as String);
   }
 
-  Future<void> writeDocument(String key, Object? value) async {
+  Future<Map<String, Object?>> readDocuments(List<String> keys) async {
+    final placeholders = List.filled(keys.length, '?').join(', ');
+    final rows = await _db.query(
+      'documents',
+      where: 'key IN ($placeholders)',
+      whereArgs: keys,
+    );
+    return {
+      for (final row in rows)
+        row['key'] as String: jsonDecode(row['value'] as String),
+    };
+  }
+
+  Future<void> writeDocument(String key, Object? value) =>
+      _writeDocument(_db, key, value);
+
+  Future<void> writeDocuments(Map<String, Object?> values) {
+    if (values.length == 1) {
+      final entry = values.entries.single;
+      return writeDocument(entry.key, entry.value);
+    }
+    return _db.transaction((txn) async {
+      for (final entry in values.entries) {
+        await _writeDocument(txn, entry.key, entry.value);
+      }
+    });
+  }
+
+  static Future<void> _writeDocument(
+    DatabaseExecutor db,
+    String key,
+    Object? value,
+  ) async {
     if (value == null) {
-      await _db.delete('documents', where: 'key = ?', whereArgs: [key]);
+      await db.delete('documents', where: 'key = ?', whereArgs: [key]);
     } else {
-      await _db.insert('documents', {
+      await db.insert('documents', {
         'key': key,
         'value': jsonEncode(value),
       }, conflictAlgorithm: ConflictAlgorithm.replace);

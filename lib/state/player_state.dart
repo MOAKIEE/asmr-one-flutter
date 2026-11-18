@@ -75,8 +75,12 @@ class PlayerState extends ChangeNotifier {
 
   final ja.AudioPlayer _player;
   final DateTime Function() _now;
-  final Future<Object?> Function()? readSession;
-  final Future<void> Function(Object?)? writeSession;
+  final Future<Map<String, Object?>> Function(List<String>)? readSession;
+  final Future<void> Function(Map<String, Object?>)? writeSession;
+  static const _cursorDocument = 'playerSession';
+  static const _queueDocument = 'playerQueue';
+  List<PlayItem>? _persistedQueue;
+  Future<void> _sessionWrites = Future.value();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   bool _disposed = false;
   bool _restoring = false;
@@ -94,32 +98,46 @@ class PlayerState extends ChangeNotifier {
   Duration? get loopEnd => _loopEnd;
 
   Future<void> _persistSession() async {
-    if (_restoring || writeSession == null) return;
-    if (_queue.isEmpty) {
-      await writeSession!(null);
-      return;
-    }
-    await writeSession!({
-      'index': _currentIndex,
-      'position': _player.position.inMilliseconds,
-      'shuffle': _player.shuffleModeEnabled,
-      'loop': _loopMode.index,
-      'items': [
-        for (final item in _queue)
-          {
-            'workId': item.workId,
-            'workTitle': item.workTitle,
-            'title': item.title,
-            'hash': item.hash,
-            'url': _cleanUrl(item.url),
-            'coverUrl': item.coverUrl,
-            'circleName': item.circleName,
-            'folderLabel': item.folderLabel,
-            'duration': item.duration?.inMilliseconds,
-            'localPath': item.localPath,
-          },
-      ],
+    final write = writeSession;
+    if (_restoring || write == null) return;
+    final queue = _queue;
+    final cursor = queue.isEmpty
+        ? null
+        : {
+            'index': _currentIndex,
+            'position': _player.position.inMilliseconds,
+            'shuffle': _player.shuffleModeEnabled,
+            'loop': _loopMode.index,
+          };
+    final save = _sessionWrites.then((_) async {
+      if (identical(queue, _persistedQueue)) {
+        if (cursor != null) await write({_cursorDocument: cursor});
+        return;
+      }
+      await write({
+        _cursorDocument: cursor,
+        _queueDocument: queue.isEmpty
+            ? null
+            : [
+                for (final item in queue)
+                  {
+                    'workId': item.workId,
+                    'workTitle': item.workTitle,
+                    'title': item.title,
+                    'hash': item.hash,
+                    'url': _cleanUrl(item.url),
+                    'coverUrl': item.coverUrl,
+                    'circleName': item.circleName,
+                    'folderLabel': item.folderLabel,
+                    'duration': item.duration?.inMilliseconds,
+                    'localPath': item.localPath,
+                  },
+              ],
+      });
+      _persistedQueue = queue;
     });
+    _sessionWrites = save.catchError((Object _) {});
+    await save;
   }
 
   static String _cleanUrl(String url) {
@@ -147,13 +165,16 @@ class PlayerState extends ChangeNotifier {
   Future<void> restoreSession() async {
     if (readSession == null || hasQueue) return;
     final version = _loadVersion;
-    final saved = await readSession!();
-    if (saved is! Map ||
-        saved['items'] is! List ||
-        hasQueue ||
-        version != _loadVersion) {
+    final documents = await readSession!([_cursorDocument, _queueDocument]);
+    final saved = documents[_cursorDocument];
+    if (saved is! Map || hasQueue || version != _loadVersion) {
       return;
     }
+    final legacyItems = saved['items'];
+    final storedItems = legacyItems is List
+        ? legacyItems
+        : documents[_queueDocument];
+    if (storedItems is! List) return;
     _restoring = true;
     try {
       final items = <PlayItem>[];
@@ -161,7 +182,7 @@ class PlayerState extends ChangeNotifier {
       var selectedExists = false;
       final savedIndex = saved['index'] as int? ?? 0;
       var sourceIndex = 0;
-      for (final raw in saved['items'] as List) {
+      for (final raw in storedItems) {
         final m = raw as Map;
         final local = m['localPath'] as String?;
         final originalIndex = sourceIndex++;
@@ -194,7 +215,7 @@ class PlayerState extends ChangeNotifier {
         'title': item.workTitle,
         'name': item.circleName,
       });
-      await _load(
+      final restored = await _load(
         items,
         index: index,
         shuffle: saved['shuffle'] == true,
@@ -204,6 +225,14 @@ class PlayerState extends ChangeNotifier {
               : 0,
         ),
       );
+      if (restored && identical(items, _queue)) {
+        if (legacyItems is! List && items.length == storedItems.length) {
+          _persistedQueue = items;
+        } else {
+          _restoring = false;
+          await _persistSession();
+        }
+      }
       // Restoring a session never starts playback without user interaction.
     } catch (e) {
       _error = '恢复播放队列失败：$e';
@@ -360,7 +389,7 @@ class PlayerState extends ChangeNotifier {
     );
     // 每 5 秒保存一次收听进度，用于「继续播放」。
     _progressTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (_player.playing) _saveProgress();
+      if (_player.playing) _saveProgress().ignore();
     });
   }
 
@@ -442,21 +471,21 @@ class PlayerState extends ChangeNotifier {
     return true;
   }
 
-  void _saveProgress() {
-    unawaited(_persistSession());
+  Future<void> _saveProgress() {
+    final session = _persistSession();
     final item = currentItem;
-    if (item == null) return;
-    final hash = item.hash;
-    if (hash == null || hash.isEmpty) return;
+    final hash = item?.hash;
+    if (item == null || hash == null || hash.isEmpty) return session;
     final pos = _player.position.inMilliseconds;
     final dur = (_player.duration?.inMilliseconds) ?? 0;
-    if (dur <= 0 || pos < 3000) return;
+    if (dur <= 0 || pos < 3000) return session;
     _library.saveProgress(
       hash: hash,
       workId: item.workId,
       positionMs: pos,
       durationMs: dur,
     );
+    return session;
   }
 
   /// 从封面提取主色并交给设置状态作为动态强调色。
@@ -652,7 +681,7 @@ class PlayerState extends ChangeNotifier {
   }) async {
     final version = ++_loadVersion;
     clearAbLoop();
-    _saveProgress();
+    _saveProgress().ignore();
     _error = null;
     _queue = items;
     _singleShuffleOrder = [];
@@ -740,7 +769,7 @@ class PlayerState extends ChangeNotifier {
   Future<void> toggle() async {
     if (_player.playing) {
       await _player.pause();
-      _saveProgress();
+      await _saveProgress();
     } else {
       await _player.play();
     }
@@ -749,7 +778,7 @@ class PlayerState extends ChangeNotifier {
 
   Future<void> pause() async {
     await _player.pause();
-    _saveProgress();
+    await _saveProgress();
     notifyListeners();
   }
 
@@ -772,7 +801,7 @@ class PlayerState extends ChangeNotifier {
 
   Future<void> seekToIndex(int index) async {
     if (index < 0 || index >= _queue.length) return;
-    _saveProgress();
+    _saveProgress().ignore();
     if (index != _currentIndex) clearAbLoop();
     if (_singleSource) {
       if (!await _setSources(_queue, index, Duration.zero)) return;
@@ -817,7 +846,7 @@ class PlayerState extends ChangeNotifier {
     _loadVersion++;
     final version = ++_sourceVersion;
     _changingSources = false;
-    _saveProgress();
+    _saveProgress().ignore();
     _queue = const [];
     _currentIndex = -1;
     _work = null;
@@ -945,7 +974,7 @@ class PlayerState extends ChangeNotifier {
     _settings.removeListener(_settingsChanged);
     _sleepTimer?.cancel();
     _progressTimer?.cancel();
-    _saveProgress();
+    _saveProgress().ignore();
     _player.dispose();
     super.dispose();
   }

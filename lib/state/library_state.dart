@@ -12,8 +12,12 @@ class LibraryState extends ChangeNotifier {
   final LibraryDb _db;
 
   Future<Object?> readDocument(String key) => _db.readDocument(key);
+  Future<Map<String, Object?>> readDocuments(List<String> keys) =>
+      _db.readDocuments(keys);
   Future<void> writeDocument(String key, Object? value) =>
       _serial(() => _db.writeDocument(key, value));
+  Future<void> writeDocuments(Map<String, Object?> values) =>
+      _serial(() => _db.writeDocuments(values));
   Future<String> exportBackup() => _serial(_db.exportBackup);
   Future<void> importBackup(String source) async {
     await _serial(() => _db.importBackup(source));

@@ -145,21 +145,19 @@ class TestAudio implements AudioPlayer {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
-    'session restores the selected track and position without autoplay',
+    'legacy session restores playback and migrates to separate documents without autoplay',
     () async {
       SharedPreferences.setMockInitialValues({});
       final settings = SettingsState(await AppPrefs.load());
       final dir = await Directory.systemTemp.createTemp('asmr-session-');
       final file = await File('${dir.path}/track.mp3').writeAsString('audio');
-      Object? session;
+      final session = <String, Object?>{};
       final audio = TestAudio();
       final player = app.PlayerState(
         settings: settings,
         library: TestLibrary(),
         audioPlayer: audio,
-        writeSession: (value) async {
-          session = value;
-        },
+        writeSession: (documents) async => session.addAll(documents),
       );
       await player.playLocalFiles(Work.fromJson({'id': 3, 'title': 'Saved'}), {
         'a': file.path,
@@ -167,22 +165,75 @@ void main() {
       audio.position = const Duration(seconds: 23);
       await player.pause();
       player.dispose();
+      final legacy = <String, Object?>{
+        'playerSession': {
+          ...session['playerSession'] as Map,
+          'items': session['playerQueue'],
+        },
+      };
       final restoredAudio = TestAudio();
       final restored = app.PlayerState(
         settings: settings,
         library: TestLibrary(),
         audioPlayer: restoredAudio,
-        readSession: () async => session,
+        readSession: (_) async => legacy,
+        writeSession: (documents) async => legacy.addAll(documents),
       );
       await restored.restoreSession();
       expect(restored.currentItem!.workId, 3);
       expect(restoredAudio.position, const Duration(seconds: 23));
       expect(restoredAudio.playCalls, 0);
+      expect(legacy['playerQueue'], hasLength(1));
+      expect(legacy['playerSession'], {
+        'index': 0,
+        'position': 23000,
+        'shuffle': false,
+        'loop': 0,
+      });
       restored.dispose();
       settings.dispose();
       await dir.delete(recursive: true);
     },
   );
+  testWidgets('periodic saves write only the playback cursor', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsState(await AppPrefs.load());
+    final audio = TestAudio();
+    final writes = <Map<String, Object?>>[];
+    final player = app.PlayerState(
+      settings: settings,
+      library: TestLibrary(),
+      audioPlayer: audio,
+      writeSession: (documents) async => writes.add(documents),
+    );
+    await player.playLocalFiles(Work.fromJson({'id': 3, 'title': 'Saved'}), {
+      'a': '/a.mp3',
+      'b': '/b.mp3',
+    });
+    expect(writes.last['playerQueue'], hasLength(2));
+    expect(writes.last['playerSession'], isNot(contains('items')));
+    writes.clear();
+
+    audio.position = const Duration(seconds: 23);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+
+    expect(writes, [
+      {
+        'playerSession': {
+          'index': 0,
+          'position': 23000,
+          'shuffle': false,
+          'loop': 0,
+        },
+      },
+    ]);
+
+    await player.stop();
+    expect(writes.last, {'playerSession': null, 'playerQueue': null});
+    player.dispose();
+    settings.dispose();
+  });
   test('A-B loop seeks at B and rejects invalid end points', () async {
     SharedPreferences.setMockInitialValues({});
     final settings = SettingsState(await AppPrefs.load());
@@ -436,16 +487,14 @@ void main() {
       final fileA = await File('${dir.path}/a.mp3').writeAsString('a');
       final fileB = await File('${dir.path}/b.mp3').writeAsString('b');
       final fileC = await File('${dir.path}/c.mp3').writeAsString('c');
-      Object? session;
+      final session = <String, Object?>{};
       final audio = TestAudio();
       final library = TestLibrary()..saved = 0;
       final player = app.PlayerState(
         settings: settings,
         library: library,
         audioPlayer: audio,
-        writeSession: (value) async {
-          session = value;
-        },
+        writeSession: (documents) async => session.addAll(documents),
       );
 
       await player.playLocalFiles(
@@ -475,7 +524,7 @@ void main() {
         settings: settings,
         library: library,
         audioPlayer: restoredAudio,
-        readSession: () async => session,
+        readSession: (_) async => session,
       );
       await restored.restoreSession();
 
