@@ -39,20 +39,35 @@ class ResumableDownload {
       ),
     );
     var response = await request(offset);
-    if (response.statusCode == 416) {
-      await response.data!.stream.drain<void>();
+    if (response.statusCode == 416 && offset > 0) {
+      await response.data?.stream.drain<void>();
+      if (await partial.exists()) await partial.delete();
+      if (await validatorFile.exists()) await validatorFile.delete();
       offset = 0;
       response = await request(0);
+    }
+    if (response.statusCode != 200 && response.statusCode != 206) {
+      await response.data?.stream.drain<void>();
+      throw FormatException('下载请求失败（HTTP ${response.statusCode}）');
     }
     if (response.statusCode == 200) offset = 0;
     final range = response.headers.value('content-range');
     final match = range == null
         ? null
         : RegExp(r'^bytes (\d+)-(\d+)/(\d+)$').firstMatch(range);
-    if (response.statusCode == 206 &&
-        (match == null || int.parse(match[1]!) != offset)) {
-      await response.data!.stream.drain<void>();
-      throw const FormatException('服务器返回了不匹配的下载范围');
+    if (response.statusCode == 206) {
+      final start = match == null ? null : int.tryParse(match[1]!);
+      final end = match == null ? null : int.tryParse(match[2]!);
+      final totalBytes = match == null ? null : int.tryParse(match[3]!);
+      if (start == null ||
+          end == null ||
+          totalBytes == null ||
+          start != offset ||
+          end < start ||
+          totalBytes <= end) {
+        await response.data?.stream.drain<void>();
+        throw const FormatException('服务器返回了不匹配的下载范围');
+      }
     }
     final etag = response.headers.value('etag');
     final nextValidator = etag != null && !etag.startsWith('W/')

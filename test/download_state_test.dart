@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 
+import 'package:asmr_one/core/api/resumable_download.dart';
 import 'package:asmr_one/core/models/track.dart';
 import 'package:asmr_one/core/models/work.dart';
 import 'package:asmr_one/core/storage/library_db.dart';
@@ -11,6 +12,7 @@ import 'package:asmr_one/state/download_state.dart';
 import 'package:asmr_one/state/library_state.dart';
 import 'package:asmr_one/state/settings_state.dart';
 import 'package:asmr_one/screens/downloads_screen.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -27,8 +29,13 @@ class DownloadLibrary extends ChangeNotifier implements LibraryState {
   @override
   List<Work> get history => const [];
   Completer<void>? saving;
+  final Map<int, Map<String, String>> pathsByWork = {};
+  final Map<int, int> downloadedPathQueries = {};
   @override
-  Future<Map<String, String>> downloadedPaths(int workId) async => {};
+  Future<Map<String, String>> downloadedPaths(int workId) async {
+    downloadedPathQueries[workId] = (downloadedPathQueries[workId] ?? 0) + 1;
+    return pathsByWork[workId] ?? {};
+  }
   @override
   Future<void> saveDownload(DownloadRow row) async {
     if (saving != null) await saving!.future;
@@ -260,4 +267,144 @@ void main() {
     state.dispose();
     await dir.delete(recursive: true);
   });
+
+  test(
+    'consecutive 416 responses fail the download task with no saved file or record',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('asmr-dl-416-');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((req) async {
+        req.response.statusCode = 416;
+        const body = 'Range Not Satisfiable';
+        req.response.headers.contentLength = body.length;
+        req.response.write(body);
+        await req.response.close();
+      });
+
+      final dio = Dio();
+      final library = DownloadLibrary();
+      final saveName = '1_a_a.mp3';
+      await File('${dir.path}/$saveName.part').writeAsString('stale');
+      await File('${dir.path}/$saveName.validator').writeAsString('"v1"');
+
+      final state = DownloadState(
+        library,
+        workDirectory: (_) async => dir,
+        downloadFile: ({required url, required savePath, cancelToken, onProgress}) =>
+            ResumableDownload(dio).download(
+              url: url,
+              savePath: savePath,
+              cancelToken: cancelToken,
+              onProgress: onProgress,
+            ),
+      );
+      final track = TrackNode.fromJson({
+        'type': 'audio',
+        'title': 'a.mp3',
+        'hash': '1/a',
+        'mediaDownloadUrl': 'http://127.0.0.1:${server.port}/a.mp3',
+      }).flatten().single;
+
+      await state.enqueueWork(Work.fromJson({'id': 1, 'title': 'Work'}), [track]);
+      await until(() => state.tasks.single.status == DownloadStatus.failed);
+
+      expect(state.tasks.single.status, DownloadStatus.failed);
+      expect(library.rows, isEmpty);
+      expect(await File('${dir.path}/$saveName').exists(), isFalse);
+
+      state.dispose();
+      dio.close();
+      await server.close(force: true);
+      await dir.delete(recursive: true);
+    },
+  );
+
+  test(
+    'restore caches downloadedPaths per workId and enqueueWork preserves loop trackIndex',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('asmr-dl-restore-');
+      final library = DownloadLibrary()
+        ..pathsByWork[1] = {'1/0': '${dir.path}/0.mp3'}
+        ..pathsByWork[2] = {};
+      final state = DownloadState(
+        library,
+        readQueue: () async => {
+          'wifiOnly': false,
+          'tasks': [
+            {
+              'workId': 1,
+              'workTitle': 'Work 1',
+              'hash': '1/0',
+              'title': '0.mp3',
+              'url': 'https://example.invalid/0',
+              'duration': 10,
+              'trackIndex': 0,
+              'folderLabel': '',
+              'status': 'paused',
+            },
+            {
+              'workId': 1,
+              'workTitle': 'Work 1',
+              'hash': '1/1',
+              'title': '1.mp3',
+              'url': 'https://example.invalid/1',
+              'duration': 10,
+              'trackIndex': 1,
+              'folderLabel': '',
+              'status': 'paused',
+            },
+            {
+              'workId': 2,
+              'workTitle': 'Work 2',
+              'hash': '2/0',
+              'title': '2_0.mp3',
+              'url': 'https://example.invalid/2_0',
+              'duration': 10,
+              'trackIndex': 0,
+              'folderLabel': '',
+              'status': 'paused',
+            },
+            {
+              'workId': 1,
+              'workTitle': 'Work 1',
+              'hash': '1/2',
+              'title': '2.mp3',
+              'url': 'https://example.invalid/2',
+              'duration': 10,
+              'trackIndex': 2,
+              'folderLabel': '',
+              'status': 'paused',
+            },
+          ],
+        },
+        workDirectory: (_) async => dir,
+        checkNetwork: () async => [ConnectivityResult.wifi],
+      );
+
+      await state.initialize();
+      expect(library.downloadedPathQueries, {1: 1, 2: 1});
+      expect(state.tasks.map((t) => t.hash), ['1/1', '2/0', '1/2']);
+
+      // enqueueWork 跳过不可下载项后仍保留原始循环索引
+      final mixedTracks = [
+        TrackNode.fromJson({'type': 'audio', 'title': 'no_hash.mp3'}).flatten().single,
+        TrackNode.fromJson({
+          'type': 'audio',
+          'title': 'ok.mp3',
+          'hash': '3/1',
+          'mediaDownloadUrl': 'https://example.invalid/3_1',
+        }).flatten().single,
+      ];
+      final result = await state.enqueueWork(
+        Work.fromJson({'id': 3, 'title': 'Work 3'}),
+        mixedTracks,
+      );
+      expect(result.queued, 1);
+      expect(result.skipped, 1);
+      expect(state.tasks.last.trackIndex, 1);
+
+      state.dispose();
+      await dir.delete(recursive: true);
+    },
+  );
 }

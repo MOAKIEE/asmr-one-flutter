@@ -38,4 +38,41 @@ void main() {
       },
     );
   }
+
+  test(
+    'consecutive 416 responses with non-empty error body fail without saving file',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('asmr-416-twice-');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final file = File('${dir.path}/audio.mp3');
+      await File('${file.path}.part').writeAsString('stale-partial');
+      await File('${file.path}.validator').writeAsString('"v1"');
+      var calls = 0;
+      server.listen((req) async {
+        calls++;
+        req.response.statusCode = 416;
+        const body = 'Range Not Satisfiable';
+        req.response.headers.contentLength = body.length;
+        req.response.write(body);
+        await req.response.close();
+      });
+
+      final dio = Dio();
+      await expectLater(
+        ResumableDownload(dio).download(
+          url: 'http://127.0.0.1:${server.port}/audio.mp3',
+          savePath: file.path,
+        ),
+        throwsFormatException,
+      );
+      expect(calls, 2);
+      expect(await file.exists(), isFalse);
+      expect(await File('${file.path}.part').exists(), isFalse);
+      expect(await File('${file.path}.validator').exists(), isFalse);
+
+      dio.close();
+      await server.close(force: true);
+      await dir.delete(recursive: true);
+    },
+  );
 }

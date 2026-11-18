@@ -140,6 +140,7 @@ class DownloadState extends ChangeNotifier {
     final saved = await readQueue?.call();
     if (saved is Map) {
       _wifiOnly = saved['wifiOnly'] == true;
+      final downloadedByWork = <int, Set<String>>{};
       for (final raw in (saved['tasks'] as List? ?? [])) {
         final m = raw as Map;
         final task = DownloadTask(
@@ -157,8 +158,9 @@ class DownloadState extends ChangeNotifier {
             : m['status'] == 'failed'
             ? DownloadStatus.failed
             : DownloadStatus.queued;
-        if (!(await _library.downloadedPaths(task.workId))
-            .containsKey(task.hash)) {
+        final downloadedHashes = downloadedByWork[task.workId] ??=
+            (await _library.downloadedPaths(task.workId)).keys.toSet();
+        if (!downloadedHashes.contains(task.hash)) {
           _tasks[task.hash] = task;
         }
       }
@@ -264,7 +266,8 @@ class DownloadState extends ChangeNotifier {
       return (queued: 0, skipped: tracks.length);
     }
 
-    for (final t in tracks) {
+    for (var i = 0; i < tracks.length; i++) {
+      final t = tracks[i];
       final hash = t.hash;
       if (hash == null || hash.isEmpty) {
         skipped++;
@@ -291,7 +294,7 @@ class DownloadState extends ChangeNotifier {
         title: t.title,
         url: url,
         duration: t.duration,
-        trackIndex: tracks.indexOf(t),
+        trackIndex: i,
         folderLabel: t.folderLabel,
       );
       queued++;
