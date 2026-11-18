@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:asmr_one/core/api/api_client.dart';
 import 'package:asmr_one/core/models/common.dart';
 import 'package:asmr_one/core/models/playlist.dart';
@@ -88,4 +90,106 @@ void main() {
     expect(api.playlistCalls, 0);
     expect(api.tagCalls, 0);
   });
+
+  test(
+    'late responses from account A never overwrite logged-out or account B state',
+    () async {
+      final switcherApi = _AccountSwitchApi();
+      final switcher = AuthState(prefs, api: switcherApi);
+      addTearDown(switcher.dispose);
+
+      // 1) A 登录并开始请求私有列表，同时挂起
+      await switcher.login('userA', 'secretA');
+      await Future<void>.delayed(Duration.zero);
+      expect(switcherApi.pendingPlaylists, hasLength(1));
+      final aPlaylistsFuture = switcherApi.pendingPlaylists.removeAt(0);
+
+      // 2) 退出后登录 B，并让 B 先返回自己的列表
+      await switcher.logout();
+      expect(switcher.playlists, isEmpty);
+      expect(switcher.playlistsLoaded, isFalse);
+
+      await switcher.login('userB', 'secretB');
+      await Future<void>.delayed(Duration.zero);
+      expect(switcherApi.pendingPlaylists, hasLength(1));
+      final bPlaylistsFuture = switcherApi.pendingPlaylists.removeAt(0);
+
+      bPlaylistsFuture.complete([
+        const Playlist(id: 200, name: 'B private'),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      expect(switcher.playlists.map((e) => e.id), [200]);
+      expect(switcher.playlistsLoaded, isTrue);
+
+      // 3) A 的列表响应最后才到达，不应覆盖 B 的列表
+      aPlaylistsFuture.complete([
+        const Playlist(id: 100, name: 'A secret'),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      expect(switcher.playlists.map((e) => e.id), [200]);
+      expect(switcher.lastError, isNull);
+
+      // 4) A 的响应在 B 请求仍在途时先到达，不应把 B 的 playlistsLoaded 标为 true
+      await switcher.login('userA', 'secretA');
+      await Future<void>.delayed(Duration.zero);
+      final a2Playlists = switcherApi.pendingPlaylists.removeAt(0);
+      await switcher.login('userB', 'secretB');
+      await Future<void>.delayed(Duration.zero);
+      final b2Playlists = switcherApi.pendingPlaylists.removeAt(0);
+
+      a2Playlists.complete([const Playlist(id: 101, name: 'A leaked')]);
+      await Future<void>.delayed(Duration.zero);
+      expect(switcher.playlists, isEmpty);
+      expect(switcher.playlistsLoaded, isFalse);
+
+      b2Playlists.complete([const Playlist(id: 201, name: 'B fresh')]);
+      await Future<void>.delayed(Duration.zero);
+      expect(switcher.playlists.map((e) => e.id), [201]);
+      expect(switcher.playlistsLoaded, isTrue);
+
+      // 5) 退出后旧请求异常迟到也不得覆盖错误标记或加载状态
+      await switcher.login('userA', 'secretA');
+      await Future<void>.delayed(Duration.zero);
+      expect(switcherApi.pendingPlaylists, hasLength(1));
+      final a3Playlists = switcherApi.pendingPlaylists.removeAt(0);
+
+      await switcher.logout();
+      a3Playlists.completeError(ApiException('A stale error', statusCode: 500));
+      await Future<void>.delayed(Duration.zero);
+      expect(switcher.playlists, isEmpty);
+      expect(switcher.playlistsLoaded, isFalse);
+      expect(switcher.lastError, isNull);
+    },
+  );
+}
+
+class _AccountSwitchApi extends ApiClient {
+  String _currentUser = 'userA';
+  final List<Completer<List<Playlist>>> pendingPlaylists = [];
+
+  @override
+  Future<String> login(String name, String password) async {
+    _currentUser = name;
+    return 'token-$name';
+  }
+
+  @override
+  Future<SessionInfo> fetchSession() async => SessionInfo(
+    user: AppUser(loggedIn: true, name: _currentUser),
+    authEnabled: true,
+    regEnabled: true,
+  );
+
+  @override
+  Future<List<Playlist>> fetchMyPlaylists({
+    int page = 1,
+    int pageSize = 100,
+  }) {
+    final completer = Completer<List<Playlist>>();
+    pendingPlaylists.add(completer);
+    return completer.future;
+  }
+
+  @override
+  Future<List<Tag>> fetchTags({int page = 1, int pageSize = 500}) async => [];
 }

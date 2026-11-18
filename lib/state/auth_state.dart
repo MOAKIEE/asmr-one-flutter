@@ -24,6 +24,7 @@ class AuthState extends ChangeNotifier {
   bool _regEnabled = true;
   bool _busy = false;
   String? _lastError;
+  int _sessionVersion = 0;
 
   List<Playlist> _playlists = const [];
   bool _playlistsLoaded = false;
@@ -70,8 +71,10 @@ class AuthState extends ChangeNotifier {
   ///
   /// 网络异常时不清除 token（避免离线打开 App 就被登出）。
   Future<void> bootstrap() async {
+    final version = _sessionVersion;
     try {
       final session = await _api.fetchSession();
+      if (version != _sessionVersion) return;
       _authEnabled = session.authEnabled;
       _regEnabled = session.regEnabled;
       if (session.user.loggedIn) {
@@ -83,6 +86,7 @@ class AuthState extends ChangeNotifier {
         _user = AppUser.anonymous;
       }
     } on ApiException catch (e) {
+      if (version != _sessionVersion) return;
       if (e.isAuthError) {
         _token = null;
         _prefs.token = null;
@@ -90,6 +94,7 @@ class AuthState extends ChangeNotifier {
       }
       _lastError = e.message;
     } catch (_) {
+      if (version != _sessionVersion) return;
       // 静默失败：保持本地状态，离线可用。
     }
     notifyListeners();
@@ -97,14 +102,21 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<bool> login(String name, String password) async {
+    final version = ++_sessionVersion;
     _busy = true;
     _lastError = null;
     notifyListeners();
     try {
       final t = await _api.login(name.trim(), password);
+      if (version != _sessionVersion) return false;
       _token = t;
       _prefs.token = t;
+      _user = AppUser(loggedIn: true, name: name.trim());
+      _playlists = const [];
+      _playlistsLoaded = false;
+      _serverTags = null;
       final session = await _api.fetchSession();
+      if (version != _sessionVersion) return false;
       _user = session.user.loggedIn
           ? session.user
           : AppUser(loggedIn: true, name: name.trim());
@@ -116,11 +128,13 @@ class AuthState extends ChangeNotifier {
       _fireAndForget(_loadCloudData());
       return true;
     } on ApiException catch (e) {
+      if (version != _sessionVersion) return false;
       _lastError = e.message;
       _busy = false;
       notifyListeners();
       return false;
     } catch (e) {
+      if (version != _sessionVersion) return false;
       _lastError = '$e';
       _busy = false;
       notifyListeners();
@@ -129,20 +143,24 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<String?> register(String name, String password) async {
+    final version = _sessionVersion;
     _busy = true;
     _lastError = null;
     notifyListeners();
     try {
       await _api.register(name.trim(), password);
+      if (version != _sessionVersion) return null;
       _busy = false;
       notifyListeners();
       return null;
     } on ApiException catch (e) {
+      if (version != _sessionVersion) return e.message;
       _lastError = e.message;
       _busy = false;
       notifyListeners();
       return e.message;
     } catch (e) {
+      if (version != _sessionVersion) return '$e';
       _lastError = '$e';
       _busy = false;
       notifyListeners();
@@ -151,6 +169,7 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    _sessionVersion++;
     _token = null;
     _prefs.token = null;
     _user = AppUser.anonymous;
@@ -158,6 +177,7 @@ class AuthState extends ChangeNotifier {
     _playlistsLoaded = false;
     _serverTags = null;
     _lastError = null;
+    _busy = false;
     notifyListeners();
   }
 
@@ -173,9 +193,11 @@ class AuthState extends ChangeNotifier {
 
   /// 拉取服务端标签目录（需要登录）。
   Future<void> loadServerTags() async {
+    final version = _sessionVersion;
     if (!hasToken) return;
     try {
       final list = await _api.fetchTags();
+      if (version != _sessionVersion) return;
       if (list.isNotEmpty) {
         _serverTags = list;
         notifyListeners();
@@ -186,6 +208,7 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<void> loadPlaylists({bool force = false}) async {
+    final version = _sessionVersion;
     if (!hasToken) {
       _playlists = const [];
       _playlistsLoaded = true;
@@ -194,10 +217,13 @@ class AuthState extends ChangeNotifier {
     }
     if (_playlistsLoaded && !force) return;
     try {
-      _playlists = await _api.fetchMyPlaylists();
+      final list = await _api.fetchMyPlaylists();
+      if (version != _sessionVersion) return;
+      _playlists = list;
       _playlistsLoaded = true;
       _lastError = null;
     } on ApiException catch (e) {
+      if (version != _sessionVersion) return;
       // 401 情况已在 ApiClient 里翻译成中文提示。
       if (e.statusCode == 404 || e.statusCode == 400) {
         _playlists = const [];
@@ -205,6 +231,7 @@ class AuthState extends ChangeNotifier {
       _lastError = e.statusCode == 404 ? null : e.message;
       _playlistsLoaded = true;
     } catch (_) {
+      if (version != _sessionVersion) return;
       _playlistsLoaded = true;
     }
     notifyListeners();
@@ -215,16 +242,19 @@ class AuthState extends ChangeNotifier {
     String? description,
     String privacy = 'private',
   }) async {
+    final version = _sessionVersion;
     try {
       final p = await _api.createPlaylist(
         name: name,
         description: description,
         privacy: privacy,
       );
+      if (version != _sessionVersion) return null;
       _playlists = [p, ..._playlists];
       notifyListeners();
       return p;
     } on ApiException catch (e) {
+      if (version != _sessionVersion) return null;
       _lastError = e.message;
       notifyListeners();
       return null;
@@ -235,8 +265,10 @@ class AuthState extends ChangeNotifier {
     if (!hasToken) return '请先登录';
     final no = work.workNo;
     if (no.isEmpty) return '该作品缺少编号，无法加入云端列表';
+    final version = _sessionVersion;
     try {
       await _api.addWorksToPlaylist(playlistId, [no]);
+      if (version != _sessionVersion) return null;
       // 乐观更新计数。
       _playlists = _playlists
           .map(
@@ -260,6 +292,7 @@ class AuthState extends ChangeNotifier {
       notifyListeners();
       return null;
     } on ApiException catch (e) {
+      if (version != _sessionVersion) return e.message;
       _lastError = e.message;
       notifyListeners();
       return e.message;
@@ -270,8 +303,10 @@ class AuthState extends ChangeNotifier {
     if (!hasToken) return '请先登录';
     final no = work.workNo;
     if (no.isEmpty) return '该作品缺少编号';
+    final version = _sessionVersion;
     try {
       await _api.removeWorksFromPlaylist(playlistId, [no]);
+      if (version != _sessionVersion) return null;
       _playlists = _playlists
           .map(
             (p) => p.id == playlistId
@@ -294,6 +329,7 @@ class AuthState extends ChangeNotifier {
       notifyListeners();
       return null;
     } on ApiException catch (e) {
+      if (version != _sessionVersion) return e.message;
       _lastError = e.message;
       notifyListeners();
       return e.message;
