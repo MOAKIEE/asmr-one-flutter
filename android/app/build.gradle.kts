@@ -89,17 +89,8 @@ android {
 }
 
 gradle.taskGraph.whenReady {
-    val needsReleaseSigning = allTasks.any { task ->
-        val name = task.name
-        name.contains("Release") &&
-            !name.contains("UnitTest") &&
-            (name.startsWith("assemble") ||
-                name.startsWith("bundle") ||
-                name.startsWith("package") ||
-                name.startsWith("validateSigning") ||
-                name.startsWith("preReleaseBuild"))
-    }
-    if (needsReleaseSigning) {
+    if (hasTask(":app:packageRelease") || hasTask(":app:signReleaseBundle") ||
+        hasTask(":app:validateSigningRelease")) {
         validateReleaseSigning()
     }
 }
