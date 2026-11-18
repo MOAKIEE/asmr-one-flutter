@@ -256,7 +256,7 @@ class SettingsScreen extends StatelessWidget {
                     style: TextStyle(color: scheme.error),
                   ),
                   subtitle: Text(l('settings.clearDataConfirm')),
-                  onTap: () => _confirmClear(context, settings, auth),
+                  onTap: () => _confirmClear(context, settings),
                 ),
               ],
             ),
@@ -355,7 +355,6 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _confirmClear(
     BuildContext context,
     SettingsState settings,
-    AuthState auth,
   ) async {
     final l = L10n.of(context);
     final ok = await showDialog<bool>(
@@ -381,11 +380,16 @@ class SettingsScreen extends StatelessWidget {
     final library = context.read<LibraryState>();
     final downloads = context.read<DownloadState>();
     await context.read<PlayerState>().stop();
-    await downloads.clearAll();
+    final failed = await downloads.clearAll();
     await library.clearAllLocalData();
     await settings.clearSearchHistory();
     if (!context.mounted) return;
-    _toast(context, l('settings.cleared'));
+    _toast(
+      context,
+      failed == 0
+          ? l('settings.cleared')
+          : l('settings.clearedWithFailures', {'n': failed}),
+    );
   }
 
   Future<void> _handleAccountTap(BuildContext context, AuthState auth) async {

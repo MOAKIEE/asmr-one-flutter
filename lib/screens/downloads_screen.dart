@@ -126,7 +126,17 @@ class DownloadsScreen extends StatelessWidget {
               workId: entry.key,
               rows: entry.value,
               onPlay: (work) => _playWork(context, work),
-              onDelete: () => downloads.deleteWorkFiles(entry.key),
+              onDelete: () async {
+                final failed = await downloads.deleteWorkFiles(entry.key);
+                if (failed == 0 || !context.mounted) return;
+                ScaffoldMessenger.of(context)
+                  ..hideCurrentSnackBar()
+                  ..showSnackBar(
+                    SnackBar(
+                      content: Text(l('download.deleteFailed', {'n': failed})),
+                    ),
+                  );
+              },
             ),
         ],
       ),

@@ -296,11 +296,13 @@ class LibraryDb {
     return rows.map(DownloadRow.fromMap).toList();
   }
 
-  Future<void> deleteDownload(int id) =>
-      _db.delete('downloads', where: 'id = ?', whereArgs: [id]);
-
-  Future<void> deleteDownloadsOfWork(int workId) =>
-      _db.delete('downloads', where: 'work_id = ?', whereArgs: [workId]);
+  Future<void> deleteDownloads(Iterable<int> ids) async {
+    final batch = _db.batch();
+    for (final id in ids) {
+      batch.delete('downloads', where: 'id = ?', whereArgs: [id]);
+    }
+    await batch.commit(noResult: true);
+  }
 
   Future<bool> isDownloaded(String hash) async {
     final rows = await _db.query(

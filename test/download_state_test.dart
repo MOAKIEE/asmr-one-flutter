@@ -20,6 +20,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class DownloadLibrary extends ChangeNotifier implements LibraryState {
   final rows = <DownloadRow>[];
+  int _nextId = 1;
   @override
   List<DownloadRow> get downloads => rows;
   @override
@@ -39,18 +40,19 @@ class DownloadLibrary extends ChangeNotifier implements LibraryState {
   @override
   Future<void> saveDownload(DownloadRow row) async {
     if (saving != null) await saving!.future;
-    rows.add(row);
+    rows.add(DownloadRow.fromMap({...row.toMap(), 'id': _nextId++}));
   }
 
   @override
   Future<List<DownloadRow>> downloadsFor(int workId) async =>
       rows.where((r) => r.workId == workId).toList();
   @override
-  Future<void> deleteDownloadsOfWork(int workId) async =>
-      rows.removeWhere((r) => r.workId == workId);
+  Future<void> refreshDownloads() async {}
   @override
-  Future<void> deleteDownload(int id) async =>
-      rows.removeWhere((r) => r.id == id);
+  Future<void> deleteDownloads(Iterable<int> ids) async {
+    rows.removeWhere((r) => ids.contains(r.id));
+    notifyListeners();
+  }
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

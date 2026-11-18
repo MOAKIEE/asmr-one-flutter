@@ -221,8 +221,8 @@ class DownloadState extends ChangeNotifier {
     super.dispose();
   }
 
-  final Set<int> _deletingWorks = {};
-  bool _clearing = false;
+  final Map<int, Future<int>> _deletingWorks = {};
+  Future<int>? _clearOperation;
   Completer<void>? _currentFinished;
 
   final Map<String, DownloadTask> _tasks = {};
@@ -262,7 +262,7 @@ class DownloadState extends ChangeNotifier {
     var queued = 0;
     var skipped = 0;
     final existing = await _library.downloadedPaths(work.id);
-    if (_clearing || _deletingWorks.contains(work.id)) {
+    if (_clearOperation != null || _deletingWorks.containsKey(work.id)) {
       return (queued: 0, skipped: tracks.length);
     }
 
@@ -307,11 +307,13 @@ class DownloadState extends ChangeNotifier {
   }
 
   Future<void> _pump() async {
-    if (_running || !_networkAllowed || _disposed || _clearing) return;
+    if (_running || !_networkAllowed || _disposed || _clearOperation != null) {
+      return;
+    }
     _running = true;
     try {
       while (true) {
-        if (!_networkAllowed || _disposed || _clearing) break;
+        if (!_networkAllowed || _disposed || _clearOperation != null) break;
         DownloadTask? next;
         for (final t in _tasks.values) {
           if (t.status == DownloadStatus.queued) {
@@ -346,11 +348,7 @@ class DownloadState extends ChangeNotifier {
     notifyListeners();
     File? file;
     try {
-      final dir = await _workDirectory(task.workId);
-      final safeName = _safeFileName(task.title);
-      file = File(
-        p.join(dir.path, '${task.hash.replaceAll('/', '_')}_$safeName'),
-      );
+      file = await _targetFile(task);
       if (token.isCancelled) throw token.cancelError!;
       if (await file.exists()) {
         await file.delete();
@@ -419,24 +417,28 @@ class DownloadState extends ChangeNotifier {
   }
 
   void cancel(DownloadTask task) {
-    if (!task.isActive &&
-        task.status != DownloadStatus.paused &&
-        task.status != DownloadStatus.failed) {
-      return;
-    }
-    task.status = DownloadStatus.cancelled;
-    if (identical(task, _current)) {
-      _cancelToken?.cancel('user');
-    } else {
-      unawaited(_deletePartial(task));
-    }
+    if (!_cancelTask(task)) return;
+    if (!identical(task, _current)) unawaited(_deletePartial(task));
     unawaited(_persistQueue());
     notifyListeners();
   }
 
+  bool _cancelTask(DownloadTask task) {
+    if (!task.isActive &&
+        task.status != DownloadStatus.paused &&
+        task.status != DownloadStatus.failed) {
+      return false;
+    }
+    task.status = DownloadStatus.cancelled;
+    if (identical(task, _current)) {
+      _cancelToken?.cancel('user');
+    }
+    return true;
+  }
+
   void retry(DownloadTask task) {
-    if (_clearing ||
-        _deletingWorks.contains(task.workId) ||
+    if (_clearOperation != null ||
+        _deletingWorks.containsKey(task.workId) ||
         identical(task, _current)) {
       return;
     }
@@ -450,72 +452,79 @@ class DownloadState extends ChangeNotifier {
     unawaited(_pump());
   }
 
-  /// 删除某作品的全部本地文件。
-  Future<void> clearAll() async {
+  /// 清理全部下载及残片，返回删除失败的文件数。
+  Future<int> clearAll() => _clearOperation ??= _clearAll().whenComplete(() {
+    _clearOperation = null;
+    notifyListeners();
+  });
+
+  Future<int> _clearAll() async {
     if (readQueue != null) await initialize();
-    _clearing = true;
-    try {
-      final finished = _currentFinished?.future;
-      for (final task in tasks) {
-        cancel(task);
-      }
-      if (finished != null) await finished;
-      for (final task in tasks) {
-        await _deletePartial(task);
-      }
-      for (final row in [..._library.downloads]) {
-        await deleteFile(row);
-      }
-      _tasks.clear();
-      await _persistQueue();
-    } finally {
-      _clearing = false;
-      notifyListeners();
-    }
+    await Future.wait(_deletingWorks.values);
+    final failures = await _cancelAndClean(tasks, _currentFinished?.future);
+    await _library.refreshDownloads();
+    return failures + await _deleteFiles(_library.downloads);
   }
 
-  /// 删除某作品的全部本地文件。
-  Future<void> deleteWorkFiles(int workId) async {
-    if (readQueue != null) await initialize();
-    if (!_deletingWorks.add(workId)) return;
-    try {
-      final finished = _current?.workId == workId
-          ? _currentFinished?.future
-          : null;
-      for (final task in tasksOf(workId)) {
-        cancel(task);
-      }
-      // 下载可能已进入落库阶段，必须等它完成后再查询并删除记录。
-      if (finished != null) await finished;
-      for (final task in tasksOf(workId)) {
-        await _deletePartial(task);
-      }
-      final rows = await _library.downloadsFor(workId);
-      for (final row in rows) {
-        try {
-          final f = File(row.filePath);
-          if (await f.exists()) await f.delete();
-        } catch (_) {
-          // 文件可能已被手动删除。
-        }
-      }
-      await _library.deleteDownloadsOfWork(workId);
-      _tasks.removeWhere((_, t) => t.workId == workId);
-      await _persistQueue();
-    } finally {
+  /// 删除作品的本地文件，返回删除失败的文件数。
+  Future<int> deleteWorkFiles(int workId) async {
+    while (_clearOperation != null) {
+      await _clearOperation;
+    }
+    return _deletingWorks[workId] ??= _deleteWorkFiles(workId).whenComplete(() {
       _deletingWorks.remove(workId);
-    }
-    notifyListeners();
+      notifyListeners();
+    });
   }
 
-  Future<void> deleteFile(DownloadRow row) async {
+  Future<int> _deleteWorkFiles(int workId) async {
+    if (readQueue != null) await initialize();
+    final finished = _current?.workId == workId ? _currentFinished?.future : null;
+    final failures = await _cancelAndClean(tasksOf(workId), finished);
+    return failures + await _deleteFiles(await _library.downloadsFor(workId));
+  }
+
+  Future<int> _cancelAndClean(
+    List<DownloadTask> tasks,
+    Future<void>? finished,
+  ) async {
+    for (final task in tasks) {
+      _cancelTask(task);
+    }
+    // 等待下载完成落库后再查询文件记录。
+    if (finished != null) await finished;
+    var failures = 0;
+    for (final task in tasks) {
+      failures += await _deletePartial(task);
+      _tasks.remove(task.hash);
+    }
+    await _persistQueue();
+    return failures;
+  }
+
+  Future<int> _deleteFiles(List<DownloadRow> rows) async {
+    var failures = 0;
+    final deletedIds = <int>[];
+    for (final row in rows) {
+      if (await _tryDelete(File(row.filePath))) {
+        if (row.id case final id?) deletedIds.add(id);
+      } else {
+        failures++;
+      }
+    }
+    if (deletedIds.isNotEmpty) await _library.deleteDownloads(deletedIds);
+    return failures;
+  }
+
+  static Future<bool> _tryDelete(File file) async {
     try {
-      final f = File(row.filePath);
-      if (await f.exists()) await f.delete();
-    } catch (_) {}
-    if (row.id != null) await _library.deleteDownload(row.id!);
-    _tasks.remove(row.hash);
-    notifyListeners();
+      await file.delete();
+      return true;
+    } on PathNotFoundException {
+      return true;
+    } on FileSystemException {
+      return false;
+    }
   }
 
   static Future<Directory> _workDir(int workId) async {
@@ -525,14 +534,25 @@ class DownloadState extends ChangeNotifier {
     return dir;
   }
 
-  Future<void> _deletePartial(DownloadTask task) async {
+  Future<File> _targetFile(DownloadTask task) async {
     final dir = await _workDirectory(task.workId);
     final name =
         '${task.hash.replaceAll('/', '_')}_${_safeFileName(task.title)}';
-    for (final suffix in ['.part', '.validator']) {
-      final file = File(p.join(dir.path, '$name$suffix'));
-      if (await file.exists()) await file.delete();
+    return File(p.join(dir.path, name));
+  }
+
+  Future<int> _deletePartial(DownloadTask task) async {
+    final File target;
+    try {
+      target = await _targetFile(task);
+    } on FileSystemException {
+      return 1;
     }
+    var failures = 0;
+    for (final suffix in ['.part', '.validator']) {
+      if (!await _tryDelete(File('${target.path}$suffix'))) failures++;
+    }
+    return failures;
   }
 
   static String _safeFileName(String name) {

@@ -281,6 +281,7 @@ const Map<String, String> _zh = {
   'settings.clearDataConfirm':
       '将删除全部收藏、收听与搜索历史、本地列表、收听进度、书签、导入的字幕，以及下载记录与音频文件，且不可恢复。',
   'settings.cleared': '本地数据已清除',
+  'settings.clearedWithFailures': '其余本地数据已清除，{n} 个下载文件删除失败。',
   'settings.about': '关于',
   'settings.version': '版本',
   'settings.aboutText':
@@ -304,6 +305,7 @@ const Map<String, String> _zh = {
   'download.title': '离线下载',
   'download.start': '开始下载',
   'download.done': '下载完成',
+  'download.deleteFailed': '有 {n} 个文件删除失败。',
   'download.failed': '下载失败',
   'download.empty': '还没有下载任何作品',
   'download.needLogin': '该作品为付费内容，登录后才可下载',
@@ -553,6 +555,7 @@ const Map<String, String> _ja = {
   'settings.clearDataConfirm':
       'お気に入り・再生履歴・検索履歴・ローカルリスト・再生位置・ブックマーク・読み込んだ字幕・ダウンロード記録と音声ファイルをすべて削除します。元に戻せません。',
   'settings.cleared': 'ローカルデータを削除しました',
+  'settings.clearedWithFailures': '他のローカルデータを削除しました。削除できなかったダウンロードファイルは {n} 件です。',
   'settings.about': 'このアプリについて',
   'settings.version': 'バージョン',
   'settings.aboutText':
@@ -576,6 +579,7 @@ const Map<String, String> _ja = {
   'download.title': 'ダウンロード',
   'download.start': 'ダウンロード開始',
   'download.done': 'ダウンロード完了',
+  'download.deleteFailed': '{n} 件のファイルを削除できませんでした。',
   'download.failed': 'ダウンロード失敗',
   'download.empty': 'ダウンロードはまだありません',
   'download.needLogin': '有料作品のダウンロードにはログインが必要です',
@@ -826,6 +830,8 @@ const Map<String, String> _en = {
   'settings.clearDataConfirm':
       'Deletes all favorites, listening and search history, local playlists, playback progress, bookmarks, imported subtitles, download records, and audio files. This cannot be undone.',
   'settings.cleared': 'Local data cleared',
+  'settings.clearedWithFailures':
+      'Other local data cleared. Download files that could not be deleted: {n}.',
   'settings.about': 'About',
   'settings.version': 'Version',
   'settings.aboutText': 'ASMR One is an unofficial third-party client. All content comes from the public asmr.one API and is intended for study and personal use.',
@@ -848,6 +854,7 @@ const Map<String, String> _en = {
   'download.title': 'Downloads',
   'download.start': 'Download',
   'download.done': 'Download complete',
+  'download.deleteFailed': 'Files that could not be deleted: {n}.',
   'download.failed': 'Download failed',
   'download.empty': 'No downloads yet',
   'download.needLogin': 'Sign in to download paid content',

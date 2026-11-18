@@ -5,6 +5,7 @@ import 'package:asmr_one/core/models/work.dart';
 import 'package:asmr_one/core/storage/app_prefs.dart';
 import 'package:asmr_one/core/storage/library_db.dart';
 import 'package:asmr_one/l10n/app_localizations.dart';
+import 'package:asmr_one/screens/downloads_screen.dart';
 import 'package:asmr_one/screens/library_lists.dart';
 import 'package:asmr_one/screens/library_screen.dart';
 import 'package:asmr_one/screens/settings_screen.dart';
@@ -105,8 +106,15 @@ class _FakeLibraryState extends ChangeNotifier implements LibraryState {
   }
 
   @override
-  Future<void> deleteDownload(int id) async {
-    _downloads.removeWhere((d) => d.id == id);
+  Future<void> refreshDownloads() async {}
+
+  @override
+  Future<List<DownloadRow>> downloadsFor(int workId) async =>
+      _downloads.where((d) => d.workId == workId).toList();
+
+  @override
+  Future<void> deleteDownloads(Iterable<int> ids) async {
+    _downloads.removeWhere((d) => ids.contains(d.id));
     notifyListeners();
   }
 
@@ -281,6 +289,8 @@ void main() {
 
     for (final key in [
       'settings.clearDataConfirm',
+      'settings.clearedWithFailures',
+      'download.deleteFailed',
       'library.clearFavorites',
       'library.clearFavoritesConfirm',
     ]) {
@@ -298,6 +308,103 @@ void main() {
     expect(zh('settings.clearDataConfirm'), contains('搜索历史'));
     expect(zh('settings.clearDataConfirm'), contains('音频文件'));
   });
+
+  for (final fromSettings in [true, false]) {
+    testWidgets(
+      '${fromSettings ? 'clear data' : 'delete work'} reports failed file deletion and retains its record for retry',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({'ui.locale': 'zh-CN'});
+        final dir = Directory.systemTemp.createTempSync('asmr-delete-failure-');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final removed = File('${dir.path}/deleted.mp3')..writeAsStringSync('audio');
+        final blocked = Directory('${dir.path}/blocked.mp3')..createSync();
+        final marker = File('${blocked.path}/marker')..writeAsStringSync('keep');
+        final library = _FakeLibraryState();
+        library._downloads.addAll([
+          for (final (id, title, path) in [
+            (1, 'Deleted track', removed.path),
+            (2, 'Blocked track', blocked.path),
+          ])
+            DownloadRow(
+              id: id,
+              workId: 101,
+              workTitle: 'Favorite One',
+              hash: '101/$id',
+              title: title,
+              filePath: path,
+              size: 5,
+            ),
+        ]);
+        final prefs = await AppPrefs.load();
+        final settings = SettingsState(prefs);
+        final auth = AuthState(prefs);
+        final downloads = DownloadState(library, workDirectory: (_) async => dir);
+        final player = PlayerState(
+          settings: settings,
+          library: library,
+          audioPlayer: TestAudio(),
+        );
+
+        await tester.pumpWidget(
+          _wrap(
+            settings: settings,
+            auth: auth,
+            library: library,
+            downloads: downloads,
+            player: player,
+            home: fromSettings ? const SettingsScreen() : const DownloadsScreen(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final delete = fromSettings ? find.text('清除本地数据') : find.text('删除');
+        if (fromSettings) {
+          await tester.scrollUntilVisible(delete, 300);
+          await tester.ensureVisible(delete);
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(delete);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('确定'));
+        final message = find.text(
+          fromSettings ? '其余本地数据已清除，1 个下载文件删除失败。' : '有 1 个文件删除失败。',
+        );
+        for (var i = 0; i < 20 && message.evaluate().isEmpty; i++) {
+          await tester.pump();
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(message, findsOneWidget);
+        expect(removed.existsSync(), isFalse);
+        expect(marker.existsSync(), isTrue);
+        expect(library.downloads.single.title, 'Blocked track');
+        expect(library.favorites.isEmpty, fromSettings);
+
+        if (!fromSettings) {
+          marker.deleteSync();
+          blocked.deleteSync();
+          await tester.tap(delete);
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('确定'));
+          for (var i = 0; i < 20 && library.downloads.isNotEmpty; i++) {
+            await tester.pump();
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 10)),
+            );
+          }
+          expect(library.downloads, isEmpty);
+        }
+
+        await tester.pumpWidget(const SizedBox());
+        player.dispose();
+        downloads.dispose();
+        library.dispose();
+        auth.dispose();
+        settings.dispose();
+      },
+    );
+  }
 
   testWidgets(
     'favorites clear dialog handles cancel and batch confirm while preserving other data',

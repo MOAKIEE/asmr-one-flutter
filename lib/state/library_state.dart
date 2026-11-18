@@ -158,14 +158,8 @@ class LibraryState extends ChangeNotifier {
     notifyListeners();
   });
 
-  Future<void> deleteDownload(int id) => _serial(() async {
-    await _db.deleteDownload(id);
-    _downloads = await _db.downloads();
-    notifyListeners();
-  });
-
-  Future<void> deleteDownloadsOfWork(int workId) => _serial(() async {
-    await _db.deleteDownloadsOfWork(workId);
+  Future<void> deleteDownloads(Iterable<int> ids) => _serial(() async {
+    await _db.deleteDownloads(ids);
     _downloads = await _db.downloads();
     notifyListeners();
   });
