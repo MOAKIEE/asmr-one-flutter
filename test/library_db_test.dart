@@ -55,6 +55,26 @@ void main() {
   });
 
   test(
+    'backup merges bookmarks by ID and keeps local edits on reimport',
+    () async {
+      final db = await LibraryDb.open(path: inMemoryDatabasePath);
+      addTearDown(db.close);
+      const key = 'bookmarks:101:101/0';
+      const backedUp = {'id': 'A', 'positionMs': 1000, 'note': 'Old note'};
+      const edited = {'id': 'A', 'positionMs': 1000, 'note': 'Local edit'};
+      const missing = {'id': 'B', 'positionMs': 2000, 'note': 'Restored note'};
+      await db.writeDocument(key, [backedUp, missing]);
+      final backup = await db.exportBackup();
+      await db.writeDocument(key, [edited]);
+
+      await db.importBackup(backup);
+      await db.importBackup(backup);
+
+      expect(await db.readDocument(key), [edited, missing]);
+    },
+  );
+
+  test(
     'LibraryState.clearFavorites clears favorites in DB while preserving bookmarks, subtitles, progress and downloads',
     () async {
       final db = await LibraryDb.open(path: inMemoryDatabasePath);

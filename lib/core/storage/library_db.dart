@@ -490,7 +490,28 @@ class LibraryDb {
         if (!key.startsWith('bookmarks:') && !key.startsWith('subtitle:')) {
           throw const FormatException('备份包含不支持的数据');
         }
-        jsonDecode(row['value'] as String);
+        final value = jsonDecode(row['value'] as String);
+        if (key.startsWith('bookmarks:')) {
+          final existing = await txn.query(
+            'documents',
+            columns: ['value'],
+            where: 'key = ?',
+            whereArgs: [key],
+          );
+          final bookmarks = <String, Map>{};
+          if (existing.isNotEmpty) {
+            _addBookmarks(
+              bookmarks,
+              jsonDecode(existing.single['value'] as String),
+            );
+          }
+          _addBookmarks(bookmarks, value);
+          await txn.insert('documents', {
+            'key': key,
+            'value': jsonEncode(bookmarks.values.toList()),
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+          continue;
+        }
         await txn.insert(
           'documents',
           row,
@@ -498,6 +519,19 @@ class LibraryDb {
         );
       }
     });
+  }
+
+  static void _addBookmarks(Map<String, Map> bookmarks, Object? value) {
+    if (value is! List) throw const FormatException('书签数据无效');
+    for (final bookmark in value) {
+      if (bookmark is! Map ||
+          bookmark['id'] is! String ||
+          bookmark['positionMs'] is! int ||
+          bookmark['note'] is! String) {
+        throw const FormatException('书签数据无效');
+      }
+      bookmarks.putIfAbsent(bookmark['id'] as String, () => bookmark);
+    }
   }
 
   Future<void> clearDocuments() => _db.delete('documents');
