@@ -282,21 +282,7 @@ class AuthState extends ChangeNotifier {
       // 乐观更新计数。
       _playlists = _playlists
           .map(
-            (p) => p.id == playlistId
-                ? Playlist(
-                    id: p.id,
-                    name: p.name,
-                    description: p.description,
-                    privacy: p.privacy,
-                    worksCount: p.worksCount + 1,
-                    createdAt: p.createdAt,
-                    updatedAt: p.updatedAt,
-                    userId: p.userId,
-                    userName: p.userName,
-                    isPreserved: p.isPreserved,
-                    likeCount: p.likeCount,
-                  )
-                : p,
+            (p) => p.id == playlistId ? p.withWorksCount(p.worksCount + 1) : p,
           )
           .toList();
       notifyListeners();
@@ -320,19 +306,7 @@ class AuthState extends ChangeNotifier {
       _playlists = _playlists
           .map(
             (p) => p.id == playlistId
-                ? Playlist(
-                    id: p.id,
-                    name: p.name,
-                    description: p.description,
-                    privacy: p.privacy,
-                    worksCount: (p.worksCount - 1).clamp(0, 1 << 30),
-                    createdAt: p.createdAt,
-                    updatedAt: p.updatedAt,
-                    userId: p.userId,
-                    userName: p.userName,
-                    isPreserved: p.isPreserved,
-                    likeCount: p.likeCount,
-                  )
+                ? p.withWorksCount((p.worksCount - 1).clamp(0, 1 << 30))
                 : p,
           )
           .toList();

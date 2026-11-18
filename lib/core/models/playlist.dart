@@ -35,6 +35,20 @@ class Playlist {
 
   bool get isPublic => privacy == 'public';
 
+  Playlist withWorksCount(int count) => Playlist(
+    id: id,
+    name: name,
+    description: description,
+    privacy: privacy,
+    worksCount: count,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    userId: userId,
+    userName: userName,
+    isPreserved: isPreserved,
+    likeCount: likeCount,
+  );
+
   factory Playlist.fromJson(Map<String, dynamic> json) {
     final user = asMap(json['user']);
     return Playlist(
