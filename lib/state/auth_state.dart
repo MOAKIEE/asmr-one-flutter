@@ -109,17 +109,17 @@ class AuthState extends ChangeNotifier {
     try {
       final t = await _api.login(name.trim(), password);
       if (version != _sessionVersion) return false;
+      final session = await _api.fetchSession(sessionToken: t);
+      if (version != _sessionVersion) return false;
+      if (!session.user.loggedIn) throw ApiException('登录失败：服务端未确认登录状态。');
+      // 校验期间其他请求仍属于原账号。
+      _sessionVersion++;
       _token = t;
       _prefs.token = t;
-      _user = AppUser(loggedIn: true, name: name.trim());
+      _user = session.user;
       _playlists = const [];
       _playlistsLoaded = false;
       _serverTags = null;
-      final session = await _api.fetchSession();
-      if (version != _sessionVersion) return false;
-      _user = session.user.loggedIn
-          ? session.user
-          : AppUser(loggedIn: true, name: name.trim());
       _authEnabled = session.authEnabled;
       _regEnabled = session.regEnabled;
       _busy = false;

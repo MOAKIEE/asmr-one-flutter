@@ -101,6 +101,7 @@ class ApiClient {
     Object? body,
     bool auth = false,
     int maxAttempts = 3,
+    String? sessionToken,
   }) async {
     Object? lastError;
     final startIndex = preferredIndex ?? _baseIndex;
@@ -109,7 +110,7 @@ class ApiClient {
       final index = (startIndex + attempt) % baseUrls.length;
       _baseIndex = index;
       final url = '${baseUrls[index]}$path';
-      final t = token;
+      final t = sessionToken ?? token;
       try {
         final res = await _dio.request<dynamic>(
           url,
@@ -306,8 +307,13 @@ class ApiClient {
   // 账号
   // ---------------------------------------------------------------------------
 
-  Future<SessionInfo> fetchSession() async {
-    final data = await _get('/api/auth/me', auth: true);
+  Future<SessionInfo> fetchSession({String? sessionToken}) async {
+    final data = await _request(
+      'GET',
+      '/api/auth/me',
+      auth: true,
+      sessionToken: sessionToken,
+    );
     return SessionInfo.fromJson(asMap(data));
   }
 

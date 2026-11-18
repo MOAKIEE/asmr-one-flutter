@@ -27,7 +27,7 @@ class AppUser {
   String get displayName => name ?? '未登录';
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
-    loggedIn: asBool(json['loggedIn'] ?? json['logged_in'], true),
+    loggedIn: asBool(json['loggedIn'] ?? json['logged_in'], json.isNotEmpty),
     id: asStringOrNull(json['id']),
     name: asStringOrNull(json['name']),
     email: asStringOrNull(json['email']),

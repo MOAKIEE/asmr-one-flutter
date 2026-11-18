@@ -20,7 +20,10 @@ class SessionApi extends ApiClient {
   int tagCalls = 0;
 
   @override
-  Future<SessionInfo> fetchSession() async {
+  Future<String> login(String name, String password) async => 'candidate';
+
+  @override
+  Future<SessionInfo> fetchSession({String? sessionToken}) async {
     if (error != null) throw error!;
     return session;
   }
@@ -89,6 +92,39 @@ void main() {
     expect(prefs.token, 'saved-token');
     expect(api.playlistCalls, 0);
     expect(api.tagCalls, 0);
+  });
+
+  test('rejected session leaves a signed-out user without credentials', () async {
+    await auth.logout();
+    api.error = ApiException('expired', statusCode: 401);
+    expect(await auth.login('new-user', 'password'), isFalse);
+    expect(auth.loggedIn, isFalse);
+    expect(auth.hasToken, isFalse);
+    expect(prefs.token, isNull);
+    expect(auth.lastError, 'expired');
+    expect(auth.busy, isFalse);
+    expect(api.playlistCalls, 0);
+  });
+
+  test('failed account switch preserves the verified account and lists', () async {
+    await auth.bootstrap();
+    await Future<void>.delayed(Duration.zero);
+    api.error = ApiException('offline');
+    expect(await auth.login('new-user', 'password'), isFalse);
+    expect(auth.loggedIn, isTrue);
+    expect(auth.user.name, 'test');
+    expect(prefs.token, 'saved-token');
+    expect(auth.playlists.single.id, 7);
+    expect(api.playlistCalls, 1);
+    expect(auth.lastError, 'offline');
+  });
+
+  test('a session without a user cannot confirm a new login', () async {
+    await auth.logout();
+    api.session = SessionInfo.fromJson({});
+    expect(await auth.login('new-user', 'password'), isFalse);
+    expect(auth.loggedIn, isFalse);
+    expect(prefs.token, isNull);
   });
 
   test(
@@ -174,7 +210,7 @@ class _AccountSwitchApi extends ApiClient {
   }
 
   @override
-  Future<SessionInfo> fetchSession() async => SessionInfo(
+  Future<SessionInfo> fetchSession({String? sessionToken}) async => SessionInfo(
     user: AppUser(loggedIn: true, name: _currentUser),
     authEnabled: true,
     regEnabled: true,

@@ -76,9 +76,11 @@ void main() {
     });
     final api = ApiClient(adapter: adapter)..attachPrefs(prefs);
 
-    prefs.token = await api.login('test-user', 'test-password');
-    final session = await api.fetchSession();
+    prefs.token = 'previous-token';
+    final candidate = await api.login('test-user', 'test-password');
+    final session = await api.fetchSession(sessionToken: candidate);
 
+    expect(prefs.token, 'previous-token');
     expect(session.user.loggedIn, isTrue);
     expect(session.user.name, 'test-user');
     final request = adapter.requests.last;
