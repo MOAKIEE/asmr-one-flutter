@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../state/auth_state.dart';
-import '../state/player_state.dart';
 import '../widgets/player_scaffold.dart';
 
 /// 登录 / 注册页。
@@ -218,7 +217,6 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _error = null);
 
     final auth = context.read<AuthState>();
-    final player = context.read<PlayerState>();
 
     if (_isRegister) {
       final err = await auth.register(
@@ -241,9 +239,6 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = auth.lastError ?? l('auth.loginFailed'));
       return;
     }
-    // 登录后刷新队列中原本无法播放的付费曲目地址。
-    await player.refreshTokens();
-    if (!mounted) return;
     _toast(l('auth.loginSuccess'));
     Navigator.of(context).maybePop();
   }

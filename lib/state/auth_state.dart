@@ -10,13 +10,15 @@ import '../core/storage/app_prefs.dart';
 
 /// 登录状态 + 依赖登录态的云端数据（播放列表、标签目录）。
 class AuthState extends ChangeNotifier {
-  AuthState(this._prefs, {ApiClient? api}) : _api = api ?? ApiClient.instance {
+  AuthState(this._prefs, {ApiClient? api, this.onTokenChanged})
+    : _api = api ?? ApiClient.instance {
     _api.attachPrefs(_prefs);
     _token = _prefs.token;
   }
 
   final AppPrefs _prefs;
   final ApiClient _api;
+  final Future<void> Function()? onTokenChanged;
 
   String? _token;
   AppUser _user = AppUser.anonymous;
@@ -72,6 +74,7 @@ class AuthState extends ChangeNotifier {
   /// 网络异常时不清除 token（避免离线打开 App 就被登出）。
   Future<void> bootstrap() async {
     final version = _sessionVersion;
+    Future<void>? tokenRefresh;
     try {
       final session = await _api.fetchSession();
       if (version != _sessionVersion) return;
@@ -88,9 +91,8 @@ class AuthState extends ChangeNotifier {
     } on ApiException catch (e) {
       if (version != _sessionVersion) return;
       if (e.isAuthError) {
-        _token = null;
-        _prefs.token = null;
         _user = AppUser.anonymous;
+        tokenRefresh = _setToken(null);
       }
       _lastError = e.message;
     } catch (_) {
@@ -98,6 +100,7 @@ class AuthState extends ChangeNotifier {
       // 静默失败：保持本地状态，离线可用。
     }
     notifyListeners();
+    await tokenRefresh;
     if (loggedIn) _fireAndForget(_loadCloudData());
   }
 
@@ -113,9 +116,7 @@ class AuthState extends ChangeNotifier {
       if (version != _sessionVersion) return false;
       if (!session.user.loggedIn) throw ApiException('登录失败：服务端未确认登录状态。');
       // 校验期间其他请求仍属于原账号。
-      _sessionVersion++;
-      _token = t;
-      _prefs.token = t;
+      final sessionVersion = ++_sessionVersion;
       _user = session.user;
       _playlists = const [];
       _playlistsLoaded = false;
@@ -123,10 +124,12 @@ class AuthState extends ChangeNotifier {
       _authEnabled = session.authEnabled;
       _regEnabled = session.regEnabled;
       _busy = false;
+      final tokenRefresh = _setToken(t);
       notifyListeners();
       // 登录后异步补齐云端数据，不阻塞界面。
       _fireAndForget(_loadCloudData());
-      return true;
+      await tokenRefresh;
+      return sessionVersion == _sessionVersion;
     } on ApiException catch (e) {
       if (version != _sessionVersion) return false;
       _lastError = e.message;
@@ -170,15 +173,22 @@ class AuthState extends ChangeNotifier {
 
   Future<void> logout() async {
     _sessionVersion++;
-    _token = null;
-    _prefs.token = null;
     _user = AppUser.anonymous;
     _playlists = const [];
     _playlistsLoaded = false;
     _serverTags = null;
     _lastError = null;
     _busy = false;
+    final tokenRefresh = _setToken(null);
     notifyListeners();
+    await tokenRefresh;
+  }
+
+  Future<void>? _setToken(String? token) {
+    if (_token == token) return null;
+    _token = token;
+    _prefs.token = token;
+    return onTokenChanged?.call();
   }
 
   void clearError() {

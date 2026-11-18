@@ -81,6 +81,8 @@ class PlayerState extends ChangeNotifier {
   bool _disposed = false;
   bool _restoring = false;
   int _loadVersion = 0;
+  int _sourceVersion = 0;
+  String? _appliedMediaToken;
   bool _stopAfterTrack = false;
   bool get stopAfterTrack => _stopAfterTrack;
   bool _fadeSleep = true;
@@ -131,6 +133,17 @@ class PlayerState extends ChangeNotifier {
               .toString();
   }
 
+  static bool _isApiMedia(Uri uri) =>
+      uri.scheme == 'https' &&
+      uri.path.startsWith('/api/media/') &&
+      ApiClient.baseUrls.any((base) => Uri.parse(base).host == uri.host);
+
+  static String _queueUrl(String? url) {
+    if (url == null) return '';
+    final uri = Uri.tryParse(url);
+    return uri != null && _isApiMedia(uri) ? _cleanUrl(url) : url;
+  }
+
   Future<void> restoreSession() async {
     if (readSession == null || hasQueue) return;
     final version = _loadVersion;
@@ -153,22 +166,6 @@ class PlayerState extends ChangeNotifier {
         final local = m['localPath'] as String?;
         final originalIndex = sourceIndex++;
         if (local != null && !await File(local).exists()) continue;
-        var url = m['url'] as String? ?? '';
-        final uri = Uri.tryParse(url);
-        if (uri != null &&
-            ApiClient.baseUrls.any(
-              (base) => Uri.parse(base).host == uri.host,
-            ) &&
-            uri.path.startsWith('/api/media/')) {
-          url = uri
-              .replace(
-                queryParameters: {
-                  ...uri.queryParameters,
-                  'token': _api.token ?? '',
-                },
-              )
-              .toString();
-        }
         if (originalIndex < savedIndex) index++;
         if (originalIndex == savedIndex) selectedExists = true;
         items.add(
@@ -176,7 +173,7 @@ class PlayerState extends ChangeNotifier {
             workId: m['workId'] as int,
             workTitle: m['workTitle'] as String,
             title: m['title'] as String,
-            url: url,
+            url: _queueUrl(m['url'] as String?),
             coverUrl: m['coverUrl'] as String,
             hash: m['hash'] as String?,
             circleName: m['circleName'] as String? ?? '',
@@ -383,8 +380,8 @@ class PlayerState extends ChangeNotifier {
   Future<void> _reloadPlaybackMode() async {
     final wasPlaying = playing;
     try {
-      await _setSources(_queue, _currentIndex, _player.position);
-      if (wasPlaying) unawaited(_player.play());
+      final loaded = await _setSources(_queue, _currentIndex, _player.position);
+      if (loaded && wasPlaying) unawaited(_player.play());
     } catch (e) {
       _error = '更新播放模式失败：$e';
     }
@@ -392,11 +389,14 @@ class PlayerState extends ChangeNotifier {
   }
 
   // 关闭自动下一首时只向底层提交当前曲目，保留应用内完整队列。
-  Future<void> _setSources(
+  Future<bool> _setSources(
     List<PlayItem> items,
     int index,
-    Duration position,
-  ) async {
+    Duration position, {
+    bool resetPlatform = false,
+    bool preload = true,
+  }) async {
+    final version = ++_sourceVersion;
     _changingSources = true;
     _singleSource = !_settings.autoPlayNext || _stopAfterTrack;
     if (_singleSource && _singleShuffleOrder.length != items.length) {
@@ -404,26 +404,42 @@ class PlayerState extends ChangeNotifier {
     }
     _currentIndex = index;
     try {
+      if (resetPlatform) {
+        await _player.stop();
+        if (version != _sourceVersion) return false;
+      }
       await _player.setLoopMode(
         _stopAfterTrack || (_singleSource && _loopMode == ja.LoopMode.all)
             ? ja.LoopMode.off
             : _loopMode,
       );
+      if (version != _sourceVersion) return false;
       final ids = _mediaIds(items);
+      final token = _api.token ?? '';
+      final sources = _singleSource
+          ? [_toSource(items[index], ids[index], token)]
+          : [
+              for (var i = 0; i < items.length; i++)
+                _toSource(items[i], ids[i], token),
+            ];
+      _appliedMediaToken = sources.any((source) => _isApiMedia(source.uri))
+          ? token
+          : null;
       await _player.setAudioSources(
-        _singleSource
-            ? [_toSource(items[index], ids[index])]
-            : [
-                for (var i = 0; i < items.length; i++)
-                  _toSource(items[i], ids[i]),
-              ],
+        sources,
+        preload: preload,
         initialIndex: _singleSource ? 0 : index,
         initialPosition: position,
       );
+    } catch (_) {
+      if (version == _sourceVersion) rethrow;
+      return false;
     } finally {
-      _changingSources = false;
+      if (version == _sourceVersion) _changingSources = false;
     }
+    if (version != _sourceVersion) return false;
     unawaited(_onItemChanged());
+    return true;
   }
 
   void _saveProgress() {
@@ -506,7 +522,7 @@ class PlayerState extends ChangeNotifier {
           workTitle: work.title,
           title: t.title,
           hash: hash,
-          url: url ?? '',
+          url: _queueUrl(url),
           localPath: local,
           coverUrl: cover,
           circleName: work.circleName,
@@ -612,7 +628,7 @@ class PlayerState extends ChangeNotifier {
       workTitle: work.title,
       title: track.title,
       hash: hash,
-      url: url ?? '',
+      url: _queueUrl(url),
       localPath: local,
       coverUrl: cover,
       circleName: work.circleName,
@@ -655,8 +671,8 @@ class PlayerState extends ChangeNotifier {
               ? Duration(milliseconds: saved)
               : Duration.zero);
       if (version != _loadVersion) return false;
-      await _setSources(items, index, resume);
-      if (version != _loadVersion) return false;
+      final loaded = await _setSources(items, index, resume);
+      if (!loaded || version != _loadVersion) return false;
       if (resume > Duration.zero &&
           _player.duration != null &&
           resume >= _player.duration! - const Duration(seconds: 3)) {
@@ -695,8 +711,13 @@ class PlayerState extends ChangeNotifier {
     return unique;
   }
 
-  ja.AudioSource _toSource(PlayItem item, String mediaId) {
-    final uri = item.isLocal ? Uri.file(item.localPath!) : Uri.parse(item.url);
+  ja.UriAudioSource _toSource(PlayItem item, String mediaId, String token) {
+    var uri = item.isLocal ? Uri.file(item.localPath!) : Uri.parse(item.url);
+    if (_isApiMedia(uri)) {
+      uri = uri.replace(
+        queryParameters: {...uri.queryParameters, 'token': token},
+      );
+    }
     return ja.AudioSource.uri(
       uri,
       tag: MediaItem(
@@ -754,7 +775,7 @@ class PlayerState extends ChangeNotifier {
     _saveProgress();
     if (index != _currentIndex) clearAbLoop();
     if (_singleSource) {
-      await _setSources(_queue, index, Duration.zero);
+      if (!await _setSources(_queue, index, Duration.zero)) return;
     } else {
       await _player.seek(Duration.zero, index: index);
     }
@@ -794,14 +815,19 @@ class PlayerState extends ChangeNotifier {
 
   Future<void> stop() async {
     _loadVersion++;
+    final version = ++_sourceVersion;
+    _changingSources = false;
     _saveProgress();
-    await _player.stop();
     _queue = const [];
     _currentIndex = -1;
     _work = null;
+    _appliedMediaToken = null;
     clearSleepTimer();
     _stopAfterTrack = false;
     clearAbLoop();
+    await _player.stop();
+    if (version != _sourceVersion) return;
+    await _player.setAudioSources(const [], preload: false);
     await _persistSession();
     notifyListeners();
   }
@@ -822,7 +848,7 @@ class PlayerState extends ChangeNotifier {
     final position = wasCurrent ? Duration.zero : _player.position;
     _queue = next;
     try {
-      await _setSources(next, resumeIndex, position);
+      if (!await _setSources(next, resumeIndex, position)) return;
       await _persistSession();
       if (wasPlaying) await _player.play();
     } catch (e) {
@@ -872,58 +898,30 @@ class PlayerState extends ChangeNotifier {
 
   void clearSleepTimer() => setSleepTimer(0);
 
-  /// 用新令牌刷新当前队列的播放地址（登录后付费内容才可播放）。
+  /// 账号令牌变更后撤下旧媒体源，并用当前令牌重新配置音频引擎。
   Future<void> refreshTokens() async {
-    if (_queue.isEmpty) return;
-    var changed = false;
-    final refreshed = <PlayItem>[];
-    for (final item in _queue) {
-      final uri = Uri.tryParse(item.url);
-      final isApiMedia =
-          uri != null &&
-          uri.path.startsWith('/api/media/') &&
-          ApiClient.baseUrls.any((base) => Uri.parse(base).host == uri.host);
-      if (item.isLocal || (!isApiMedia && item.url.isNotEmpty)) {
-        refreshed.add(item);
-        continue;
-      }
-      final hash = item.hash;
-      if (hash == null || hash.isEmpty) {
-        refreshed.add(item);
-        continue;
-      }
-      final url = _api.mediaStreamUrl(
-        hash,
-        lowQuality: _settings.preferLowQuality,
-      );
-      changed = true;
-      refreshed.add(
-        PlayItem(
-          workId: item.workId,
-          workTitle: item.workTitle,
-          title: item.title,
-          hash: item.hash,
-          url: url,
-          coverUrl: item.coverUrl,
-          circleName: item.circleName,
-          folderLabel: item.folderLabel,
-          duration: item.duration,
-        ),
-      );
+    final token = _api.token ?? '';
+    final item = currentItem;
+    if (_disposed ||
+        item == null ||
+        _appliedMediaToken == null ||
+        _appliedMediaToken == token) {
+      return;
     }
-    if (!changed) return;
-    final index = _currentIndex;
+    final uri = item.isLocal ? null : Uri.tryParse(item.url);
+    final preload = token.isNotEmpty || uri == null || !_isApiMedia(uri);
     final wasPlaying = playing;
-    _queue = refreshed;
     try {
-      await _setSources(
-        refreshed,
-        index.clamp(0, refreshed.length - 1),
+      final loaded = await _setSources(
+        _queue,
+        _currentIndex,
         _player.position,
+        resetPlatform: true,
+        preload: preload,
       );
-      if (wasPlaying) unawaited(_player.play());
+      if (loaded && wasPlaying && preload) unawaited(_player.play());
     } catch (_) {
-      // 忽略：下一次播放会重新加载。
+      _error = '更新播放地址失败，请重试。';
     }
     notifyListeners();
   }

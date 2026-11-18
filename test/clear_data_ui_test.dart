@@ -1,10 +1,12 @@
 import 'dart:io';
 
+import 'package:asmr_one/core/models/track.dart';
 import 'package:asmr_one/core/models/work.dart';
 import 'package:asmr_one/core/storage/app_prefs.dart';
 import 'package:asmr_one/core/storage/library_db.dart';
 import 'package:asmr_one/l10n/app_localizations.dart';
 import 'package:asmr_one/screens/library_lists.dart';
+import 'package:asmr_one/screens/library_screen.dart';
 import 'package:asmr_one/screens/settings_screen.dart';
 import 'package:asmr_one/state/auth_state.dart';
 import 'package:asmr_one/state/download_state.dart';
@@ -14,10 +16,17 @@ import 'package:asmr_one/state/settings_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:just_audio/just_audio.dart' show UriAudioSource;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'auth_state_test.dart' show SessionApi;
 import 'player_state_test.dart' show TestAudio;
+
+class _PlaybackSessionApi extends SessionApi {
+  @override
+  String coverUrl(int workId, {String type = 'main'}) => '';
+}
 
 class _FakeLibraryState extends ChangeNotifier implements LibraryState {
   List<Work> _favorites = [
@@ -47,6 +56,7 @@ class _FakeLibraryState extends ChangeNotifier implements LibraryState {
     },
   };
   final Map<String, int> progress = {'101/0': 15000};
+  final Map<String, String> localPaths = {};
   int toggleCalls = 0;
   int clearFavoritesCalls = 0;
 
@@ -101,7 +111,10 @@ class _FakeLibraryState extends ChangeNotifier implements LibraryState {
   }
 
   @override
-  Future<Map<String, String>> downloadedPaths(int workId) async => {};
+  Future<Map<String, String>> downloadedPaths(int workId) async => localPaths;
+
+  @override
+  Future<void> recordHistory(Work work) async {}
 
   @override
   Future<int> progressFor(String hash) async => progress[hash] ?? 0;
@@ -161,6 +174,106 @@ Widget _wrap({
 }
 
 void main() {
+  for (final fromSettings in [true, false]) {
+    testWidgets(
+      '${fromSettings ? 'settings' : 'library'} sign out updates engine sources and keeps offline playback',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({
+          'auth.token': 'previous-account',
+          'ui.locale': 'zh-CN',
+          'player.autoPlayNext': true,
+        });
+        final prefs = await AppPrefs.load();
+        final settings = SettingsState(prefs);
+        final api = _PlaybackSessionApi();
+        final library = _FakeLibraryState()
+          ..localPaths['101/1'] = '/offline.mp3';
+        final downloads = DownloadState(library);
+        final audio = TestAudio();
+        final player = PlayerState(
+          settings: settings,
+          library: library,
+          audioPlayer: audio,
+          api: api,
+        );
+        final auth = AuthState(
+          prefs,
+          api: api,
+          onTokenChanged: player.refreshTokens,
+        );
+        await auth.bootstrap();
+        await player.playWork(
+          library.favorites.first,
+          [
+            for (final (hash, title) in [
+              ('101/0', 'Online track'),
+              ('101/1', 'Offline track'),
+              ('101/2', 'Next online track'),
+            ])
+              TrackNode.fromJson({
+                'type': 'audio',
+                'hash': hash,
+                'title': title,
+              }).flatten().single,
+          ],
+          startIndex: fromSettings ? 0 : 1,
+        );
+        expect(
+          (audio.sources.first as UriAudioSource).uri.queryParameters['token'],
+          'previous-account',
+        );
+        await tester.pumpWidget(
+          _wrap(
+            settings: settings,
+            auth: auth,
+            library: library,
+            downloads: downloads,
+            player: player,
+            home: fromSettings ? const SettingsScreen() : const LibraryScreen(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        if (fromSettings) {
+          final account = find.text('当前账号：test');
+          await tester.scrollUntilVisible(account, 300);
+          await tester.tap(account);
+        } else {
+          await tester.tap(find.text('退出登录'));
+        }
+        await tester.pumpAndSettle();
+        final dialog = find.byType(AlertDialog);
+        expect(find.text('确定要退出登录吗？'), findsOneWidget);
+        await tester.tap(
+          find.descendant(of: dialog, matching: find.byType(FilledButton)),
+        );
+        await tester.pumpAndSettle();
+
+        expect(auth.hasToken, isFalse);
+        expect(find.text('未登录'), findsOneWidget);
+        final sources = audio.sources.cast<UriAudioSource>();
+        expect(sources.map((source) => source.uri.queryParameters['token']), [
+          '',
+          null,
+          '',
+        ]);
+        expect(audio.playing, !fromSettings);
+        if (fromSettings) await player.next();
+        await tester.pump();
+        expect(player.currentItem?.title, 'Offline track');
+        expect(sources[audio.index!].uri.scheme, 'file');
+        expect(audio.playing, isTrue);
+
+        await tester.pumpWidget(const SizedBox());
+        player.dispose();
+        downloads.dispose();
+        library.dispose();
+        auth.dispose();
+        settings.dispose();
+      },
+    );
+  }
+
   test('clear data and clear favorites strings are translated in all 3 locales', () {
     final zh = L10n.forLocale(const Locale('zh', 'CN'));
     final ja = L10n.forLocale(const Locale('ja', 'JP'));

@@ -104,7 +104,6 @@ class _BootstrapAppState extends State<BootstrapApp> {
   void initState() {
     super.initState();
     _settings = SettingsState(widget.prefs);
-    _auth = AuthState(widget.prefs);
     _library = LibraryState(widget.db);
     _player = PlayerState(
       settings: _settings,
@@ -112,6 +111,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
       readSession: () => _library.readDocument('playerSession'),
       writeSession: (value) => _library.writeDocument('playerSession', value),
     );
+    _auth = AuthState(widget.prefs, onTokenChanged: _player.refreshTokens);
     _downloads = DownloadState(
       _library,
       readQueue: () => _library.readDocument('downloadQueue'),
