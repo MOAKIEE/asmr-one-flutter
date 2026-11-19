@@ -16,11 +16,13 @@ class WorkListScreen extends StatefulWidget {
     required this.title,
     this.query = const WorkQuery(),
     this.showOrderBar = true,
+    this.api,
   });
 
   final String title;
   final WorkQuery query;
   final bool showOrderBar;
+  final ApiClient? api;
 
   @override
   State<WorkListScreen> createState() => _WorkListScreenState();
@@ -40,7 +42,7 @@ class _WorkListScreenState extends State<WorkListScreen> {
 
   void _buildFeed() {
     _feed = WorkFeed(
-      (page, pageSize) => ApiClient.instance.fetchWorks(
+      (page, pageSize) => (widget.api ?? ApiClient.instance).fetchWorks(
         _query.copyWith(page: page, pageSize: pageSize),
       ),
       pageSize: 24,
@@ -57,6 +59,7 @@ class _WorkListScreenState extends State<WorkListScreen> {
 
   Future<void> _changeOrder(WorkOrder order, SortDirection sort) async {
     _query = _query.copyWith(order: order, sort: sort);
+    _feed.dispose();
     setState(_buildFeed);
   }
 

@@ -125,28 +125,59 @@ class _WorkRailState extends State<WorkRail> {
                 );
               }
               final items = _feed.items;
+              final showTail =
+                  _feed.loadingMore || (_feed.hasMore && _feed.error != null);
               return NotificationListener<ScrollNotification>(
                 onNotification: (n) {
                   if (n.metrics.axis == Axis.horizontal &&
+                      _feed.error == null &&
+                      _feed.hasMore &&
+                      !_feed.loadingMore &&
                       n.metrics.pixels >= n.metrics.maxScrollExtent - 400) {
-                    _feed.loadMore();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted && _feed.error == null) _feed.loadMore();
+                    });
                   }
                   return false;
                 },
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: items.length + (_feed.hasMore ? 1 : 0),
+                  itemCount: items.length + (showTail ? 1 : 0),
                   separatorBuilder: (_, _) => const SizedBox(width: 12),
                   itemBuilder: (context, i) {
                     if (i >= items.length) {
+                      if (_feed.loadingMore) {
+                        return SizedBox(
+                          width: widget.cardWidth,
+                          child: const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
                       return SizedBox(
                         width: widget.cardWidth,
-                        child: const Center(
-                          child: SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2.4),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.cloud_off_rounded,
+                                size: 22,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                              const SizedBox(height: 8),
+                              FilledButton.tonal(
+                                onPressed: _feed.loadMore,
+                                child: Text(l('common.retry')),
+                              ),
+                            ],
                           ),
                         ),
                       );

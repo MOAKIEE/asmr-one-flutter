@@ -117,13 +117,18 @@ class WorkFeedView extends StatelessWidget {
             final showSkeleton = feed.loading && items.isEmpty;
             final showError = feed.error != null && items.isEmpty;
             final showEmpty =
-                !feed.loading && feed.error == null && items.isEmpty;
+                feed.isEmpty && !feed.loading && feed.error == null;
 
             return NotificationListener<ScrollNotification>(
               onNotification: (n) {
                 if (n.metrics.axis != Axis.vertical) return false;
-                if (n.metrics.pixels >= n.metrics.maxScrollExtent - 600) {
-                  feed.loadMore();
+                if (feed.error == null &&
+                    feed.hasMore &&
+                    !feed.loadingMore &&
+                    n.metrics.pixels >= n.metrics.maxScrollExtent - 600) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (feed.error == null) feed.loadMore();
+                  });
                 }
                 return false;
               },
@@ -190,7 +195,37 @@ class WorkFeedView extends StatelessWidget {
                     const SliverToBoxAdapter(
                       child: LoadMoreIndicator(loading: true, hasMore: true),
                     ),
-                  if (items.isNotEmpty && !feed.loadingMore && !feed.hasMore)
+                  if (items.isNotEmpty &&
+                      !feed.loadingMore &&
+                      feed.error != null)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              feed.error!,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            FilledButton.tonalIcon(
+                              onPressed: feed.loadMore,
+                              icon: const Icon(Icons.refresh_rounded, size: 18),
+                              label: Text(L10n.of(context)('common.retry')),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (items.isNotEmpty &&
+                      !feed.loadingMore &&
+                      feed.error == null &&
+                      !feed.hasMore)
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.only(bottom: 28),
