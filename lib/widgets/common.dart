@@ -2,6 +2,9 @@ import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+
+import 'app_motion.dart';
+
 import 'package:shimmer/shimmer.dart';
 
 import '../core/theme/app_theme.dart';
@@ -50,7 +53,8 @@ class _CoverImageState extends State<CoverImage> {
         : CachedNetworkImage(
             imageUrl: widget.url,
             fit: widget.fit,
-            fadeInDuration: const Duration(milliseconds: 220),
+            fadeInDuration: AppMotion.duration(context, AppMotion.standard),
+            fadeOutDuration: AppMotion.duration(context, AppMotion.quick),
             placeholder: (_, _) => _placeholder(scheme),
             errorWidget: (_, _, _) => _placeholder(scheme, failed: true),
           );
@@ -176,6 +180,7 @@ class ShimmerBox extends StatelessWidget {
     if (aspectRatio != null) {
       box = AspectRatio(aspectRatio: aspectRatio!, child: box);
     }
+    if (MediaQuery.disableAnimationsOf(context)) return box;
     return Shimmer.fromColors(
       baseColor: scheme.surfaceContainerHigh,
       highlightColor: dark ? const Color(0xFF2E2739) : const Color(0xFFF4F2FA),
@@ -214,10 +219,7 @@ class GridSkeleton extends StatelessWidget {
           itemBuilder: (_, _) => Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
-              AspectRatio(
-                aspectRatio: 1,
-                child: ShimmerBox(radius: 18),
-              ),
+              AspectRatio(aspectRatio: 1, child: ShimmerBox(radius: 18)),
               SizedBox(height: 10),
               ShimmerBox(height: 12, radius: 6),
               SizedBox(height: 6),
@@ -336,9 +338,8 @@ class EmptyView extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
             ),
             if (action != null) ...[const SizedBox(height: 18), action!],
           ],
@@ -410,9 +411,7 @@ class AppGroupCard extends StatelessWidget {
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(radius),
-        side: BorderSide(
-          color: scheme.outlineVariant.withValues(alpha: 0.45),
-        ),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.45)),
       ),
       clipBehavior: Clip.antiAlias,
       child: content,

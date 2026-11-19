@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/app_motion.dart';
+
 import '../l10n/app_localizations.dart';
 import '../widgets/player_scaffold.dart';
 import 'browse_screen.dart';
@@ -15,7 +17,20 @@ class RootShell extends StatefulWidget {
   State<RootShell> createState() => _RootShellState();
 }
 
-class _RootShellState extends State<RootShell> {
+class _RootShellState extends State<RootShell>
+    with SingleTickerProviderStateMixin {
+  late final _fade = AnimationController(
+    vsync: this,
+    duration: AppMotion.quick,
+    value: 1,
+  );
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    super.dispose();
+  }
+
   int _index = 0;
 
   @override
@@ -23,14 +38,19 @@ class _RootShellState extends State<RootShell> {
     final l = L10n.of(context);
     final scheme = Theme.of(context).colorScheme;
     return PlayerScaffold(
-      body: IndexedStack(
-        index: _index,
-        children: const [
-          HomeScreen(),
-          BrowseScreen(),
-          SearchScreen(),
-          LibraryScreen(),
-        ],
+      body: FadeTransition(
+        opacity: MediaQuery.disableAnimationsOf(context)
+            ? const AlwaysStoppedAnimation(1)
+            : _fade,
+        child: IndexedStack(
+          index: _index,
+          children: const [
+            HomeScreen(),
+            BrowseScreen(),
+            SearchScreen(),
+            LibraryScreen(),
+          ],
+        ),
       ),
       bottomNavigationBar: DecoratedBox(
         decoration: BoxDecoration(
@@ -42,7 +62,12 @@ class _RootShellState extends State<RootShell> {
         ),
         child: NavigationBar(
           selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
+          onDestinationSelected: (i) {
+            if (i == _index) return;
+            setState(() => _index = i);
+            if (!MediaQuery.disableAnimationsOf(context))
+              _fade.forward(from: 0);
+          },
           destinations: [
             NavigationDestination(
               icon: const Icon(Icons.auto_awesome_outlined),

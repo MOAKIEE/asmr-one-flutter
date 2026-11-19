@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../widgets/app_motion.dart';
+
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -26,11 +29,17 @@ import 'tag_browse_screen.dart';
 
 /// 作品详情页。
 class WorkDetailScreen extends StatefulWidget {
-  const WorkDetailScreen({super.key, required this.work, this.api});
+  const WorkDetailScreen({
+    super.key,
+    required this.work,
+    this.coverTag,
+    this.api,
+  });
 
   /// 列表页传入的作品（可能是列表接口的精简数据，进入后会补全）。
   final Work work;
   final ApiClient? api;
+  final Object? coverTag;
 
   @override
   State<WorkDetailScreen> createState() => _WorkDetailScreenState();
@@ -239,11 +248,14 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
                     .dependOnInheritedWidgetOfExactType<
                       FlexibleSpaceBarSettings
                     >();
-                final collapsed =
-                    bar == null || bar.currentExtent <= bar.minExtent + 24;
-                return AnimatedOpacity(
-                  duration: const Duration(milliseconds: 160),
-                  opacity: collapsed ? 1 : 0,
+                final opacity = bar == null
+                    ? 1.0
+                    : (1 - (bar.currentExtent - bar.minExtent) / 48).clamp(
+                        0.0,
+                        1.0,
+                      );
+                return Opacity(
+                  opacity: opacity,
                   child: Text(
                     _work.title,
                     maxLines: 1,
@@ -270,6 +282,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           ),
           SliverToBoxAdapter(
             child: _HeaderCard(
+              coverTag: widget.coverTag,
               work: _work,
               loading: _loadingDetail,
               error: _detailError,
@@ -437,7 +450,9 @@ class _CoverBackdrop extends StatelessWidget {
 }
 
 class _HeaderCard extends StatelessWidget {
+  final Object? coverTag;
   const _HeaderCard({
+    required this.coverTag,
     required this.work,
     required this.loading,
     required this.error,
@@ -482,11 +497,14 @@ class _HeaderCard extends StatelessWidget {
             children: [
               SizedBox(
                 width: 118,
-                child: CoverImage(
-                  url: work.mainCoverUrl,
-                  seedId: work.id,
-                  radius: 16,
-                  blur: settings.blurNsfw && work.nsfw,
+                child: CoverHero(
+                  tag: coverTag,
+                  child: CoverImage(
+                    url: work.mainCoverUrl,
+                    seedId: work.id,
+                    radius: 16,
+                    blur: settings.blurNsfw && work.nsfw,
+                  ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -539,8 +557,8 @@ class _HeaderCard extends StatelessWidget {
                         Text(
                           Fmt.count(
                             work.dlCount,
-                            languageCode:
-                                Localizations.localeOf(context).languageCode,
+                            languageCode: Localizations.localeOf(context)
+                                .languageCode,
                           ),
                           style: theme.textTheme.labelSmall,
                         ),
@@ -742,7 +760,10 @@ class _InfoTable extends StatelessWidget {
     final rows = <(String, String)>[
       (l('work.no'), work.workNo),
       (l('work.release'), Fmt.date(work.release)),
-      (l('work.created'), Fmt.relative(work.createDate, languageCode: langCode)),
+      (
+        l('work.created'),
+        Fmt.relative(work.createDate, languageCode: langCode),
+      ),
       if ((work.duration ?? 0) > 0)
         (l('work.duration'), Fmt.duration(work.duration)),
       if (work.languageEditions.isNotEmpty)
@@ -917,9 +938,8 @@ class _TrackList extends StatelessWidget {
                   Expanded(
                     child: Text(
                       node.title,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: Theme.of(context).textTheme.labelMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ],
@@ -1121,8 +1141,8 @@ class _ReviewList extends StatelessWidget {
                     Text(
                       Fmt.relative(
                         r.createdAt,
-                        languageCode:
-                            Localizations.localeOf(context).languageCode,
+                        languageCode: Localizations.localeOf(context)
+                            .languageCode,
                       ),
                       style: Theme.of(context).textTheme.labelSmall,
                     ),

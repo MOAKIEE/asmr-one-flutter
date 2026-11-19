@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_motion.dart';
+
 import '../core/models/work.dart';
 import '../l10n/app_localizations.dart';
 import '../state/work_feed.dart';
@@ -69,7 +71,7 @@ class StaticWorkGrid extends StatelessWidget {
           itemCount: works.length,
           itemBuilder: (context, i) {
             final work = works[i];
-            final card = WorkCard(work: work, onTap: () => openWork(context, work));
+            final card = WorkCard(work: work);
             if (onLongPress == null) return card;
             return GestureDetector(
               onLongPress: () => onLongPress!(work),
@@ -172,23 +174,30 @@ class WorkFeedView extends StatelessWidget {
                         top: padding.top,
                         bottom: padding.bottom,
                       ),
-                      sliver: SliverList.builder(
-                        itemCount: items.length,
-                        itemBuilder: (context, i) =>
-                            WorkListTile(work: items[i]),
+                      sliver: FeedEntrance(
+                        builder: (entrance) => SliverList.builder(
+                          itemCount: items.length,
+                          itemBuilder: (context, i) =>
+                              entrance(i, WorkListTile(work: items[i])),
+                        ),
                       ),
                     )
                   else
                     SliverPadding(
                       padding: padding,
-                      sliver: SliverGrid.builder(
-                        itemCount: items.length,
-                        gridDelegate: WorkGridLayout.delegate(
-                          context,
-                          availableWidth: available,
-                          columns: columns,
+                      sliver: FeedEntrance(
+                        builder: (entrance) => SliverGrid.builder(
+                          itemCount: items.length,
+                          gridDelegate: WorkGridLayout.delegate(
+                            context,
+                            availableWidth: available,
+                            columns: columns,
+                          ),
+                          itemBuilder: (context, i) => entrance(
+                            i ~/ safeColumns,
+                            WorkCard(work: items[i]),
+                          ),
                         ),
-                        itemBuilder: (context, i) => WorkCard(work: items[i]),
                       ),
                     ),
                   if (items.isNotEmpty && feed.loadingMore)

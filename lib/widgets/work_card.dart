@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+
+import 'app_motion.dart';
+
 import 'package:provider/provider.dart';
 
 import '../core/models/work.dart';
@@ -43,6 +46,7 @@ class WorkCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
+    final coverTag = (context, work.id);
     final langCode = Localizations.localeOf(context).languageCode;
     final theme = Theme.of(context);
     final settings = context.watch<SettingsState>();
@@ -52,7 +56,7 @@ class WorkCard extends StatelessWidget {
     final textHeight = textHeightFor(context);
 
     return InkWell(
-      onTap: onTap ?? () => openWork(context, work),
+      onTap: onTap ?? () => openWork(context, work, coverTag: coverTag),
       borderRadius: BorderRadius.circular(AppDecor.radiusCard),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -64,12 +68,15 @@ class WorkCard extends StatelessWidget {
               final badgePad = compact ? 5.0 : 8.0;
               return Stack(
                 children: [
-                  CoverImage(
-                    url: work.mainCoverUrl,
-                    seedId: work.id,
-                    aspectRatio: 1,
-                    radius: compact ? 12 : 16,
-                    blur: settings.blurNsfw && work.nsfw,
+                  CoverHero(
+                    tag: onTap == null ? coverTag : null,
+                    child: CoverImage(
+                      url: work.mainCoverUrl,
+                      seedId: work.id,
+                      aspectRatio: 1,
+                      radius: compact ? 12 : 16,
+                      blur: settings.blurNsfw && work.nsfw,
+                    ),
                   ),
                   Positioned(
                     left: badgePad,
@@ -121,9 +128,8 @@ class WorkCard extends StatelessWidget {
                                     vertical: compact ? 2 : 3,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFF3DDC97,
-                                    ).withValues(alpha: 0.94),
+                                    color: const Color(0xFF3DDC97)
+                                        .withValues(alpha: 0.94),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
@@ -295,6 +301,7 @@ class WorkListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
+    final coverTag = (context, work.id);
     final langCode = Localizations.localeOf(context).languageCode;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -313,7 +320,7 @@ class WorkListTile extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: onTap ?? () => openWork(context, work),
+          onTap: onTap ?? () => openWork(context, work, coverTag: coverTag),
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.all(10),
@@ -323,11 +330,14 @@ class WorkListTile extends StatelessWidget {
                 children: [
                   SizedBox(
                     width: 78,
-                    child: CoverImage(
-                      url: work.mainCoverUrl,
-                      seedId: work.id,
-                      radius: 12,
-                      blur: settings.blurNsfw && work.nsfw,
+                    child: CoverHero(
+                      tag: onTap == null ? coverTag : null,
+                      child: CoverImage(
+                        url: work.mainCoverUrl,
+                        seedId: work.id,
+                        radius: 12,
+                        blur: settings.blurNsfw && work.nsfw,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -418,7 +428,9 @@ class WorkListTile extends StatelessWidget {
                       children: [
                         AgeBadge(
                           nsfw: work.nsfw,
-                          label: work.nsfw ? l('work.adult') : l('work.general'),
+                          label: work.nsfw
+                              ? l('work.adult')
+                              : l('work.general'),
                         ),
                         if (trailing != null)
                           trailing!
@@ -459,7 +471,10 @@ class WorkListTile extends StatelessWidget {
 }
 
 /// 打开作品详情页。
-void openWork(BuildContext context, Work work) {
-  Navigator.of(context)
-      .push(MaterialPageRoute(builder: (_) => WorkDetailScreen(work: work)));
+void openWork(BuildContext context, Work work, {Object? coverTag}) {
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => WorkDetailScreen(work: work, coverTag: coverTag),
+    ),
+  );
 }

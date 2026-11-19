@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'app_motion.dart';
+
 import '../core/api/api_client.dart';
 import '../core/models/work.dart';
 import '../l10n/app_localizations.dart';
@@ -140,53 +142,55 @@ class _WorkRailState extends State<WorkRail> {
                   }
                   return false;
                 },
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: items.length + (showTail ? 1 : 0),
-                  separatorBuilder: (_, _) => const SizedBox(width: 12),
-                  itemBuilder: (context, i) {
-                    if (i >= items.length) {
-                      if (_feed.loadingMore) {
+                child: FeedEntrance(
+                  builder: (entrance) => ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: items.length + (showTail ? 1 : 0),
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (context, i) {
+                      if (i >= items.length) {
+                        if (_feed.loadingMore) {
+                          return SizedBox(
+                            width: widget.cardWidth,
+                            child: const Center(
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
                         return SizedBox(
                           width: widget.cardWidth,
-                          child: const Center(
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.4,
-                              ),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.cloud_off_rounded,
+                                  size: 22,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                                const SizedBox(height: 8),
+                                FilledButton.tonal(
+                                  onPressed: _feed.loadMore,
+                                  child: Text(l('common.retry')),
+                                ),
+                              ],
                             ),
                           ),
                         );
                       }
                       return SizedBox(
                         width: widget.cardWidth,
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.cloud_off_rounded,
-                                size: 22,
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                              const SizedBox(height: 8),
-                              FilledButton.tonal(
-                                onPressed: _feed.loadMore,
-                                child: Text(l('common.retry')),
-                              ),
-                            ],
-                          ),
-                        ),
+                        child: entrance(i, WorkCard(work: items[i])),
                       );
-                    }
-                    return SizedBox(
-                      width: widget.cardWidth,
-                      child: WorkCard(work: items[i]),
-                    );
-                  },
+                    },
+                  ),
                 ),
               );
             },
