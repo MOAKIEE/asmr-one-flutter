@@ -154,7 +154,7 @@ class LibraryScreen extends StatelessWidget {
           const SizedBox(height: 20),
           Center(
             child: Text(
-              '${l('settings.version')} 1.1.0 · ${ApiClient.instance.baseUrlHost}',
+              '${l('settings.version')} 1.2.0 · ${ApiClient.instance.baseUrlHost}',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
