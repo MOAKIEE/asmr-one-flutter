@@ -5,6 +5,7 @@
 ![Flutter](https://img.shields.io/badge/Flutter-3.47-02569B?logo=flutter&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white)
 ![Dart](https://img.shields.io/badge/Dart-3.13-0175C2?logo=dart&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 > [!IMPORTANT]
 > **非官方项目**：与 asmr.one 及 DLsite 无任何隶属关系。作品数据、封面与音频均来自其公开接口，
@@ -24,7 +25,7 @@
 - **资料库（离线可用）** — 收藏、收听历史、本地播放列表、JSON 备份与合并恢复、
   整部作品离线下载（暂停 / 续传 / 重启恢复 / 仅 Wi-Fi / 体积统计）
 - **云端** — 登录后可管理云端播放列表，并解锁完整标签库与付费作品音频
-- **界面** — 三语（中 / 日 / 英）、明暗主题与 8 种强调色、封面取色、悬浮迷你播放器
+- **界面** — 三语（中 / 日 / 英）、明暗主题与 8 种强调色、封面取色、悬浮迷你播放器、应用内检查更新
 
 ## 构建
 
@@ -72,4 +73,4 @@ lib/
 
 ## 许可
 
-本仓库未指定开源许可证，默认保留所有权利。
+本项目基于 [MIT License](LICENSE) 开源。
