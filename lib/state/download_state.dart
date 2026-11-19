@@ -418,7 +418,17 @@ class DownloadState extends ChangeNotifier {
 
   void cancel(DownloadTask task) {
     if (!_cancelTask(task)) return;
-    if (!identical(task, _current)) unawaited(_deletePartial(task));
+    if (!identical(task, _current)) {
+      unawaited(
+        _deletePartial(task).then((failed) {
+          if (failed > 0 && !_disposed) {
+            task.status = DownloadStatus.failed;
+            unawaited(_persistQueue());
+            notifyListeners();
+          }
+        }),
+      );
+    }
     unawaited(_persistQueue());
     notifyListeners();
   }
@@ -495,8 +505,13 @@ class DownloadState extends ChangeNotifier {
     if (finished != null) await finished;
     var failures = 0;
     for (final task in tasks) {
-      failures += await _deletePartial(task);
-      _tasks.remove(task.hash);
+      final partialFailures = await _deletePartial(task);
+      failures += partialFailures;
+      if (partialFailures == 0) {
+        _tasks.remove(task.hash);
+      } else {
+        task.status = DownloadStatus.failed;
+      }
     }
     await _persistQueue();
     return failures;

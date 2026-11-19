@@ -302,7 +302,7 @@ class SettingsScreen extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.tag_rounded),
                   title: Text(l('settings.version')),
-                  trailing: Text(
+                  subtitle: Text(
                     '1.1.0 (${settings.currentHost})',
                     style: Theme.of(context).textTheme.labelSmall,
                   ),

@@ -661,4 +661,159 @@ void main() {
       settings.dispose();
     },
   );
+
+  testWidgets(
+    'settings bottom section and residual .part deletion failure render cleanly on 360x640 at 1.35x',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      SharedPreferences.setMockInitialValues({
+        'ui.locale': 'zh-CN',
+        'ui.useCoverAccent': false,
+      });
+      final dir = Directory.systemTemp.createTempSync('asmr-part-failure-');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final doneFile = File('${dir.path}/done.mp3')..writeAsStringSync('ok');
+      final blockedPart = Directory('${dir.path}/301_1_part.mp3.part')
+        ..createSync();
+      final lockFile = File('${blockedPart.path}/lock')
+        ..writeAsStringSync('busy');
+
+      final prefs = await AppPrefs.load();
+      final settings = SettingsState(prefs);
+      final auth = AuthState(prefs);
+      final library = _FakeLibraryState();
+      library._downloads.add(
+        DownloadRow(
+          id: 1,
+          workId: 301,
+          workTitle: 'Work With Part',
+          hash: '301/0',
+          title: 'done.mp3',
+          filePath: doneFile.path,
+          size: 2,
+        ),
+      );
+      final downloads = DownloadState(
+        library,
+        workDirectory: (_) async => dir,
+        networkChanges: const Stream.empty(),
+        readQueue: () async => {
+          'wifiOnly': false,
+          'tasks': [
+            {
+              'workId': 301,
+              'workTitle': 'Work With Part',
+              'hash': '301/1',
+              'title': 'part.mp3',
+              'url': 'https://example.invalid/p.mp3',
+              'duration': 60,
+              'trackIndex': 1,
+              'folderLabel': '',
+              'status': 'paused',
+            },
+          ],
+        },
+      );
+      await downloads.initialize();
+      final player = PlayerState(
+        settings: settings,
+        library: library,
+        audioPlayer: TestAudio(),
+      );
+
+      // 1) DownloadsScreen keeps failed .part task visible instead of showing empty state.
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(1.35)),
+          child: _wrap(
+            settings: settings,
+            auth: auth,
+            library: library,
+            downloads: downloads,
+            player: player,
+            home: const DownloadsScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('删除'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确定'));
+      for (
+        var i = 0;
+        i < 20 && find.text('有 1 个文件删除失败。').evaluate().isEmpty;
+        i++
+      ) {
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('有 1 个文件删除失败。'), findsOneWidget);
+      expect(find.text('还没有下载任何作品'), findsNothing);
+      expect(find.text('part'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      // Once unlocked, cancelling the retained failed task cleans up the .part file.
+      lockFile.deleteSync();
+      blockedPart.deleteSync();
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('还没有下载任何作品'), findsOneWidget);
+
+      // 2) SettingsScreen scrolls all the way to the version tile at 360x640 @ 1.35x without ListTile overflow.
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: settings.locale,
+          supportedLocales: L10n.supportedLocales,
+          localizationsDelegates: const [
+            L10n.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: const TextScaler.linear(1.35),
+            ),
+            child: MultiProvider(
+              providers: [
+                ChangeNotifierProvider<SettingsState>.value(value: settings),
+                ChangeNotifierProvider<AuthState>.value(value: auth),
+                ChangeNotifierProvider<LibraryState>.value(value: library),
+                ChangeNotifierProvider<DownloadState>.value(value: downloads),
+                ChangeNotifierProvider<PlayerState>.value(value: player),
+              ],
+              child: child!,
+            ),
+          ),
+          home: const SettingsScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byIcon(Icons.tag_rounded),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('版本'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      player.dispose();
+      downloads.dispose();
+      library.dispose();
+      auth.dispose();
+      settings.dispose();
+    },
+  );
 }
