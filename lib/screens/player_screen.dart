@@ -140,6 +140,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.labelSmall,
                           ),
+                          if (player.error != null) ...[
+                            const SizedBox(height: 12),
+                            _ErrorBanner(
+                              message: player.error!,
+                              onRetry: () {
+                                player.clearError();
+                                player.refreshTokens();
+                              },
+                              onDismiss: player.clearError,
+                            ),
+                          ],
                           SizedBox(height: compact ? 14 : 22),
                           _ProgressBar(
                             player: player,
@@ -190,6 +201,63 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({
+    required this.message,
+    required this.onRetry,
+    required this.onDismiss,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L10n.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.error_outline_rounded,
+            size: 18,
+            color: scheme.onErrorContainer,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onErrorContainer),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: l('common.retry'),
+            color: scheme.onErrorContainer,
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: l('common.close'),
+            color: scheme.onErrorContainer,
+            onPressed: onDismiss,
+            icon: const Icon(Icons.close_rounded, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ProgressBar extends StatelessWidget {
   const _ProgressBar({
     required this.player,
@@ -206,13 +274,16 @@ class _ProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Duration>(
+      initialData: player.player.position,
       stream: player.player.positionStream,
       builder: (context, snapshot) {
-        final position = snapshot.data ?? Duration.zero;
+        final position = snapshot.data ?? player.player.position;
         return StreamBuilder<Duration?>(
+          initialData: player.player.duration,
           stream: player.player.durationStream,
           builder: (context, durationSnap) {
-            final total = durationSnap.data ?? Duration.zero;
+            final total =
+                durationSnap.data ?? player.player.duration ?? Duration.zero;
             final totalMs = total.inMilliseconds;
             final ratio = totalMs <= 0
                 ? 0.0

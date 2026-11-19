@@ -451,7 +451,7 @@ class PlayerState extends ChangeNotifier {
               for (var i = 0; i < items.length; i++)
                 _toSource(items[i], ids[i], token),
             ];
-      _appliedMediaToken = sources.any((source) => _isApiMedia(source.uri))
+      final nextMediaToken = sources.any((source) => _isApiMedia(source.uri))
           ? token
           : null;
       await _player.setAudioSources(
@@ -460,13 +460,14 @@ class PlayerState extends ChangeNotifier {
         initialIndex: _singleSource ? 0 : index,
         initialPosition: position,
       );
+      if (version != _sourceVersion) return false;
+      _appliedMediaToken = nextMediaToken;
     } catch (_) {
       if (version == _sourceVersion) rethrow;
       return false;
     } finally {
       if (version == _sourceVersion) _changingSources = false;
     }
-    if (version != _sourceVersion) return false;
     unawaited(_onItemChanged());
     return true;
   }
@@ -948,7 +949,10 @@ class PlayerState extends ChangeNotifier {
         resetPlatform: true,
         preload: preload,
       );
-      if (loaded && wasPlaying && preload) unawaited(_player.play());
+      if (loaded) {
+        _error = null;
+        if (wasPlaying && preload) unawaited(_player.play());
+      }
     } catch (_) {
       _error = '更新播放地址失败，请重试。';
     }

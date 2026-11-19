@@ -132,9 +132,10 @@ class _ProgressLine extends StatelessWidget {
     return SizedBox(
       height: 2.5,
       child: StreamBuilder<Duration>(
+        initialData: player.player.position,
         stream: player.player.positionStream,
         builder: (context, snapshot) {
-          final position = snapshot.data ?? Duration.zero;
+          final position = snapshot.data ?? player.player.position;
           final total = player.player.duration ?? Duration.zero;
           final ratio = total.inMilliseconds <= 0
               ? 0.0
