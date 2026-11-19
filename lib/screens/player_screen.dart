@@ -2,6 +2,9 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+
+import '../widgets/app_motion.dart';
+
 import 'package:just_audio/just_audio.dart' as ja;
 import 'package:provider/provider.dart';
 
@@ -14,15 +17,14 @@ import 'listening_tools_screen.dart';
 
 /// 全屏播放器。
 class PlayerScreen extends StatefulWidget {
-  const PlayerScreen({super.key});
+  const PlayerScreen({super.key, this.coverTag});
+  final Object? coverTag;
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  double? _dragValue;
-
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
@@ -64,7 +66,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
         fit: StackFit.expand,
         children: [
           // 背景：封面放大 + 模糊，营造氛围感。
-          CoverImage(url: item.coverUrl, seedId: item.workId, radius: 0),
+          MotionFade(
+            child: CoverImage(
+              key: ValueKey(item.workId),
+              url: item.coverUrl,
+              seedId: item.workId,
+              radius: 0,
+            ),
+          ),
           BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 42, sigmaY: 42),
             child: DecoratedBox(
@@ -93,9 +102,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      minHeight:
-                          (constraints.maxHeight - (compact ? 18 : 28))
-                              .clamp(0.0, double.infinity),
+                      minHeight: (constraints.maxHeight - (compact ? 18 : 28))
+                          .clamp(0.0, double.infinity),
                     ),
                     child: IntrinsicHeight(
                       child: Column(
@@ -115,20 +123,29 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 ),
                               ],
                             ),
-                            child: CoverImage(
-                              url: item.coverUrl,
-                              seedId: item.workId,
-                              radius: 24,
+                            child: CoverHero(
+                              tag: widget.coverTag,
+                              child: MotionFade(
+                                child: CoverImage(
+                                  key: ValueKey(item.workId),
+                                  url: item.coverUrl,
+                                  seedId: item.workId,
+                                  radius: 24,
+                                ),
+                              ),
                             ),
                           ),
                           const Spacer(flex: 2),
-                          Text(
-                            Fmt.stripExt(item.title),
-                            maxLines: 2,
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                          MotionFade(
+                            child: Text(
+                              Fmt.stripExt(item.title),
+                              key: ValueKey(item.title),
+                              maxLines: 2,
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -152,25 +169,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                           ],
                           SizedBox(height: compact ? 14 : 22),
-                          _ProgressBar(
-                            player: player,
-                            dragValue: _dragValue,
-                            onDrag: (v) => setState(() => _dragValue = v),
-                            onDragEnd: (v) {
-                              final total = player.player.duration;
-                              if (total != null && total.inMilliseconds > 0) {
-                                player.seek(
-                                  Duration(
-                                    milliseconds: (total.inMilliseconds * v)
-                                        .round(),
-                                  ),
-                                );
-                              }
-                              setState(() => _dragValue = null);
-                            },
-                          ),
+                          _ProgressBar(player: player),
                           const SizedBox(height: 8),
-                          _Controls(player: player),
+                          FadeTransition(
+                            opacity: MediaQuery.disableAnimationsOf(context)
+                                ? const AlwaysStoppedAnimation(1)
+                                : (ModalRoute.of(context)?.animation ??
+                                          const AlwaysStoppedAnimation<double>(
+                                            1,
+                                          ))
+                                      .drive(
+                                        CurveTween(
+                                          curve: const Interval(
+                                            0.45,
+                                            1,
+                                            curve: Curves.easeOut,
+                                          ),
+                                        ),
+                                      ),
+                            child: _Controls(player: player),
+                          ),
                           const Spacer(),
                           const SizedBox(height: 8),
                           _BottomActions(player: player),
@@ -233,9 +251,8 @@ class _ErrorBanner extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: scheme.onErrorContainer),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: scheme.onErrorContainer),
             ),
           ),
           IconButton(
@@ -258,21 +275,20 @@ class _ErrorBanner extends StatelessWidget {
   }
 }
 
-class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({
-    required this.player,
-    required this.dragValue,
-    required this.onDrag,
-    required this.onDragEnd,
-  });
-
+class _ProgressBar extends StatefulWidget {
+  const _ProgressBar({required this.player});
   final PlayerState player;
-  final double? dragValue;
-  final ValueChanged<double> onDrag;
-  final ValueChanged<double> onDragEnd;
+
+  @override
+  State<_ProgressBar> createState() => _ProgressBarState();
+}
+
+class _ProgressBarState extends State<_ProgressBar> {
+  double? _dragValue;
 
   @override
   Widget build(BuildContext context) {
+    final player = widget.player;
     return StreamBuilder<Duration>(
       initialData: player.player.position,
       stream: player.player.positionStream,
@@ -288,7 +304,7 @@ class _ProgressBar extends StatelessWidget {
             final ratio = totalMs <= 0
                 ? 0.0
                 : (position.inMilliseconds / totalMs).clamp(0.0, 1.0);
-            final value = dragValue ?? ratio;
+            final value = _dragValue ?? ratio;
             final shown = totalMs <= 0
                 ? Duration.zero
                 : Duration(milliseconds: (totalMs * value).round());
@@ -304,8 +320,14 @@ class _ProgressBar extends StatelessWidget {
                   ),
                   child: Slider(
                     value: value,
-                    onChanged: onDrag,
-                    onChangeEnd: onDragEnd,
+                    onChanged: (v) => setState(() => _dragValue = v),
+                    onChangeEnd: (v) {
+                      if (totalMs > 0)
+                        player.seek(
+                          Duration(milliseconds: (totalMs * v).round()),
+                        );
+                      setState(() => _dragValue = null);
+                    },
                   ),
                 ),
                 Padding(
@@ -369,8 +391,8 @@ class _Controls extends StatelessWidget {
                 onTap: player.toggle,
                 child: Padding(
                   padding: const EdgeInsets.all(14),
-                  child: Icon(
-                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  child: PlayPauseGlyph(
+                    playing: playing,
                     size: 34,
                     color: scheme.onPrimary,
                   ),

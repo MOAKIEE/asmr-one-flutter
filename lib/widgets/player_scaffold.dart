@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import 'app_motion.dart';
+
 import 'package:provider/provider.dart';
 
 import '../state/player_state.dart';
@@ -28,20 +31,24 @@ class PlayerScaffold extends StatelessWidget {
       appBar: appBar,
       body: body,
       floatingActionButton: floatingActionButton,
-      bottomNavigationBar: hasPlayer || bottomNavigationBar != null
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (hasPlayer)
-                  SafeArea(
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedSize(
+            duration: AppMotion.duration(context, AppMotion.standard),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.bottomCenter,
+            child: hasPlayer
+                ? SafeArea(
                     top: false,
                     bottom: bottomNavigationBar == null,
                     child: const MiniPlayer(),
-                  ),
-                ?bottomNavigationBar,
-              ],
-            )
-          : null,
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+          ?bottomNavigationBar,
+        ],
+      ),
     );
   }
 }

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import 'app_motion.dart';
+
 import 'package:provider/provider.dart';
 
 import '../core/theme/app_theme.dart';
@@ -44,7 +47,9 @@ class MiniPlayer extends StatelessWidget {
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => PlayerScreen(coverTag: context),
+                  ),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -55,10 +60,16 @@ class MiniPlayer extends StatelessWidget {
                         children: [
                           SizedBox(
                             width: 46,
-                            child: CoverImage(
-                              url: item.coverUrl,
-                              seedId: item.workId,
-                              radius: 11,
+                            child: CoverHero(
+                              tag: context,
+                              child: MotionFade(
+                                child: CoverImage(
+                                  key: ValueKey(item.workId),
+                                  url: item.coverUrl,
+                                  seedId: item.workId,
+                                  radius: 11,
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 11),
@@ -67,12 +78,17 @@ class MiniPlayer extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  Fmt.stripExt(item.title),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                MotionFade(
+                                  child: Text(
+                                    Fmt.stripExt(item.title),
+                                    key: ValueKey(item.title),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
@@ -89,9 +105,7 @@ class MiniPlayer extends StatelessWidget {
                             onTap: player.previous,
                           ),
                           _ControlButton(
-                            icon: player.playing
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
+                            playing: player.playing,
                             big: true,
                             onTap: player.toggle,
                           ),
@@ -155,9 +169,10 @@ class _ProgressLine extends StatelessWidget {
 }
 
 class _ControlButton extends StatelessWidget {
-  const _ControlButton({required this.icon, this.onTap, this.big = false});
+  const _ControlButton({this.icon, this.playing, this.onTap, this.big = false});
 
-  final IconData icon;
+  final IconData? icon;
+  final bool? playing;
   final VoidCallback? onTap;
   final bool big;
 
@@ -171,7 +186,7 @@ class _ControlButton extends StatelessWidget {
       color: onTap == null
           ? scheme.onSurfaceVariant.withValues(alpha: 0.35)
           : (big ? scheme.primary : scheme.onSurface),
-      icon: Icon(icon),
+      icon: playing == null ? Icon(icon) : PlayPauseGlyph(playing: playing!),
     );
   }
 }
