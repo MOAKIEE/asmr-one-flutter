@@ -197,6 +197,28 @@ void main() {
       expect(switcher.lastError, isNull);
     },
   );
+
+  test(
+    'login stays busy until onTokenChanged finishes so callers cannot double-submit',
+    () async {
+      final refresh = Completer<void>();
+      final state = AuthState(
+        prefs,
+        api: api,
+        onTokenChanged: () => refresh.future,
+      );
+      addTearDown(state.dispose);
+
+      final pending = state.login('alice', 'secret');
+      await Future<void>.delayed(Duration.zero);
+      expect(state.loggedIn, isTrue);
+      expect(state.busy, isTrue);
+
+      refresh.complete();
+      expect(await pending, isTrue);
+      expect(state.busy, isFalse);
+    },
+  );
 }
 
 class _AccountSwitchApi extends ApiClient {

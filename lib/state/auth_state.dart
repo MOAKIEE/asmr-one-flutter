@@ -123,12 +123,18 @@ class AuthState extends ChangeNotifier {
       _serverTags = null;
       _authEnabled = session.authEnabled;
       _regEnabled = session.regEnabled;
-      _busy = false;
       final tokenRefresh = _setToken(t);
       notifyListeners();
       // 登录后异步补齐云端数据，不阻塞界面。
       _fireAndForget(_loadCloudData());
-      await tokenRefresh;
+      try {
+        await tokenRefresh;
+      } finally {
+        if (sessionVersion == _sessionVersion) {
+          _busy = false;
+          notifyListeners();
+        }
+      }
       return sessionVersion == _sessionVersion;
     } on ApiException catch (e) {
       if (version != _sessionVersion) return false;

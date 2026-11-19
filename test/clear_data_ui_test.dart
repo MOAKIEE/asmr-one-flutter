@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:asmr_one/core/models/track.dart';
@@ -8,6 +9,7 @@ import 'package:asmr_one/l10n/app_localizations.dart';
 import 'package:asmr_one/screens/downloads_screen.dart';
 import 'package:asmr_one/screens/library_lists.dart';
 import 'package:asmr_one/screens/library_screen.dart';
+import 'package:asmr_one/screens/login_screen.dart';
 import 'package:asmr_one/screens/settings_screen.dart';
 import 'package:asmr_one/state/auth_state.dart';
 import 'package:asmr_one/state/download_state.dart';
@@ -586,6 +588,70 @@ void main() {
       expect(library.downloads, isEmpty);
       expect(audioFile.existsSync(), isFalse);
       expect(settings.searchHistory, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+      player.dispose();
+      downloads.dispose();
+      library.dispose();
+      auth.dispose();
+      settings.dispose();
+    },
+  );
+
+  testWidgets(
+    'login screen keeps submit disabled while player token refresh is in flight',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'ui.locale': 'zh-CN',
+        'ui.useCoverAccent': false,
+      });
+      final prefs = await AppPrefs.load();
+      final settings = SettingsState(prefs);
+      final api = _PlaybackSessionApi();
+      final library = _FakeLibraryState();
+      final downloads = DownloadState(library);
+      final audio = TestAudio();
+      final player = PlayerState(
+        settings: settings,
+        library: library,
+        audioPlayer: audio,
+        api: api,
+      );
+      final refresh = Completer<void>();
+      final auth = AuthState(
+        prefs,
+        api: api,
+        onTokenChanged: () async {
+          await refresh.future;
+          await player.refreshTokens();
+        },
+      );
+
+      await tester.pumpWidget(
+        _wrap(
+          settings: settings,
+          auth: auth,
+          library: library,
+          downloads: downloads,
+          player: player,
+          home: const LoginScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextFormField).at(0), 'alice');
+      await tester.enterText(find.byType(TextFormField).at(1), 'secret123');
+      await tester.tap(find.byType(FilledButton));
+      await tester.pump();
+      await tester.pump();
+
+      expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNull);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      refresh.complete();
+      await tester.pumpAndSettle();
+      expect(auth.busy, isFalse);
+      expect(auth.loggedIn, isTrue);
 
       await tester.pumpWidget(const SizedBox());
       player.dispose();
