@@ -50,12 +50,31 @@ class _BackupScreenState extends State<BackupScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('${l('backup.failed')}: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${l('backup.failed')}: ${_errorMessage(l, e)}'),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  String _errorMessage(L10n l, Object error) {
+    if (error is FormatException) {
+      return switch (error.message) {
+        '不支持的备份格式' => l('backup.invalidFormat'),
+        '备份数据不完整' => l('backup.incomplete'),
+        '作品数据无效' => l('backup.invalidWork'),
+        '播放列表引用无效' => l('backup.invalidPlaylist'),
+        '备份包含不支持的数据' => l('backup.unsupportedData'),
+        '书签数据无效' => l('backup.invalidBookmark'),
+        final msg when msg.isNotEmpty => msg,
+        _ => l('backup.invalidFormat'),
+      };
+    }
+    return '$error';
   }
 
   @override

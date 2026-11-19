@@ -483,15 +483,17 @@ class _CreatePlaylistSheetState extends State<_CreatePlaylistSheet> {
 /// 「加入播放列表」选择面板。
 Future<void> showAddToPlaylistSheet(BuildContext context, Work work) async {
   final l = L10n.of(context);
-  final auth = context.read<AuthState>();
-  final library = context.read<LibraryState>();
-  final localIds = await library.localPlaylistIdsFor(work.id);
+  final localIds = await context.read<LibraryState>().localPlaylistIdsFor(
+    work.id,
+  );
 
   if (!context.mounted) return;
 
   await showModalBottomSheet<void>(
     context: context,
     builder: (sheetContext) {
+      final auth = sheetContext.watch<AuthState>();
+      final library = sheetContext.watch<LibraryState>();
       return SafeArea(
         child: ListView(
           shrinkWrap: true,
