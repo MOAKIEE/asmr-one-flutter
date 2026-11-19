@@ -9,6 +9,7 @@ import '../state/library_state.dart';
 import '../state/player_state.dart';
 import '../state/settings_state.dart';
 import '../core/storage/library_db.dart';
+import '../widgets/app_motion.dart';
 import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
 
@@ -70,7 +71,10 @@ class DownloadsScreen extends StatelessWidget {
               onChanged: downloads.setWifiOnly,
             ),
           ),
-          if (rows.isEmpty && active.isEmpty && paused.isEmpty && failed.isEmpty)
+          if (rows.isEmpty &&
+              active.isEmpty &&
+              paused.isEmpty &&
+              failed.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 48),
               child: EmptyView(
@@ -86,6 +90,7 @@ class DownloadsScreen extends StatelessWidget {
             ),
             for (final task in active)
               _TaskTile(
+                key: ValueKey(task.key),
                 task: task,
                 onCancel: () => downloads.cancel(task),
                 onPause: () => downloads.pauseTask(task),
@@ -98,6 +103,7 @@ class DownloadsScreen extends StatelessWidget {
             ),
             for (final task in paused)
               _TaskTile(
+                key: ValueKey(task.key),
                 task: task,
                 onRetry: () => downloads.retry(task),
                 onCancel: () => downloads.cancel(task),
@@ -110,6 +116,7 @@ class DownloadsScreen extends StatelessWidget {
             ),
             for (final task in failed)
               _TaskTile(
+                key: ValueKey(task.key),
                 task: task,
                 onRetry: () => downloads.retry(task),
                 onCancel: () => downloads.cancel(task),
@@ -171,6 +178,7 @@ class DownloadsScreen extends StatelessWidget {
 
 class _TaskTile extends StatelessWidget {
   const _TaskTile({
+    super.key,
     required this.task,
     required this.onCancel,
     this.onRetry,
@@ -203,13 +211,16 @@ class _TaskTile extends StatelessWidget {
         : progressText;
 
     return ListTile(
-      leading: Icon(
-        isPaused
-            ? Icons.pause_circle_outline_rounded
-            : isFailed
-            ? Icons.error_outline_rounded
-            : Icons.downloading_rounded,
-        color: isFailed ? scheme.error : scheme.primary,
+      leading: MotionFade(
+        child: Icon(
+          isPaused
+              ? Icons.pause_circle_outline_rounded
+              : isFailed
+              ? Icons.error_outline_rounded
+              : Icons.downloading_rounded,
+          key: ValueKey(task.status),
+          color: isFailed ? scheme.error : scheme.primary,
+        ),
       ),
       title: Text(
         Fmt.stripExt(task.title),
@@ -226,11 +237,14 @@ class _TaskTile extends StatelessWidget {
               minHeight: 3,
             ),
           const SizedBox(height: 4),
-          Text(
-            subtitleText,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall,
+          MotionFade(
+            child: Text(
+              subtitleText,
+              key: ValueKey(task.status),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall,
+            ),
           ),
         ],
       ),

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../widgets/app_motion.dart';
-
 import '../l10n/app_localizations.dart';
+import '../widgets/app_motion.dart';
 import '../widgets/player_scaffold.dart';
 import 'browse_screen.dart';
 import 'home_screen.dart';
@@ -32,6 +31,12 @@ class _RootShellState extends State<RootShell>
   }
 
   int _index = 0;
+  static const _pages = [
+    HomeScreen(),
+    BrowseScreen(),
+    SearchScreen(),
+    LibraryScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -44,11 +49,9 @@ class _RootShellState extends State<RootShell>
             : _fade,
         child: IndexedStack(
           index: _index,
-          children: const [
-            HomeScreen(),
-            BrowseScreen(),
-            SearchScreen(),
-            LibraryScreen(),
+          children: [
+            for (var i = 0; i < _pages.length; i++)
+              TickerMode(enabled: i == _index, child: _pages[i]),
           ],
         ),
       ),
@@ -65,8 +68,9 @@ class _RootShellState extends State<RootShell>
           onDestinationSelected: (i) {
             if (i == _index) return;
             setState(() => _index = i);
-            if (!MediaQuery.disableAnimationsOf(context))
+            if (!MediaQuery.disableAnimationsOf(context)) {
               _fade.forward(from: 0);
+            }
           },
           destinations: [
             NavigationDestination(

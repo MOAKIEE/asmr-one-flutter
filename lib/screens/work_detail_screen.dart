@@ -1,7 +1,4 @@
 import 'package:flutter/material.dart';
-
-import '../widgets/app_motion.dart';
-
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -20,6 +17,7 @@ import '../state/download_state.dart';
 import '../state/library_state.dart';
 import '../state/player_state.dart';
 import '../state/settings_state.dart';
+import '../widgets/app_motion.dart';
 import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
 import '../widgets/work_rail.dart';
@@ -726,7 +724,34 @@ class _ActionButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
             child: Column(
               children: [
-                Icon(icon, size: 20, color: color),
+                AnimatedSwitcher(
+                  duration: AppMotion.duration(context, AppMotion.quick),
+                  transitionBuilder: (child, animation) {
+                    if (child.key != const ValueKey(Icons.favorite_rounded)) {
+                      return FadeTransition(opacity: animation, child: child);
+                    }
+                    final pulse = TweenSequence<double>([
+                      TweenSequenceItem(
+                        tween: Tween(begin: 1, end: 1.16),
+                        weight: 45,
+                      ),
+                      TweenSequenceItem(
+                        tween: Tween(begin: 1.16, end: 1),
+                        weight: 55,
+                      ),
+                    ]);
+                    return ScaleTransition(
+                      scale: animation.drive(pulse),
+                      child: FadeTransition(opacity: animation, child: child),
+                    );
+                  },
+                  child: Icon(
+                    icon,
+                    key: ValueKey(icon),
+                    size: 20,
+                    color: color,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   label,

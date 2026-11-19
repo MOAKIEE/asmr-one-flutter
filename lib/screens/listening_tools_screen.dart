@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../state/library_state.dart';
 import '../state/listening_notes.dart';
 import '../state/player_state.dart';
+import '../widgets/app_motion.dart';
 import '../widgets/common.dart';
 
 class ListeningToolsScreen extends StatefulWidget {
@@ -489,7 +490,10 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
                         Scrollable.ensureVisible(
                           targetCtx,
                           alignment: 0.35,
-                          duration: const Duration(milliseconds: 250),
+                          duration: AppMotion.duration(
+                            targetCtx,
+                            AppMotion.standard,
+                          ),
                           curve: Curves.easeOut,
                         );
                       } else {
@@ -504,7 +508,10 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
                               Scrollable.ensureVisible(
                                 retryCtx,
                                 alignment: 0.35,
-                                duration: const Duration(milliseconds: 200),
+                                duration: AppMotion.duration(
+                                  retryCtx,
+                                  AppMotion.standard,
+                                ),
                                 curve: Curves.easeOut,
                               );
                             }
@@ -524,6 +531,11 @@ class _ListeningToolsScreenState extends State<ListeningToolsScreen> {
                         key: key,
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Material(
+                          animateColor: true,
+                          animationDuration: AppMotion.duration(
+                            context,
+                            AppMotion.quick,
+                          ),
                           color: i == active
                               ? Theme.of(context).colorScheme.primaryContainer
                               : Theme.of(context)

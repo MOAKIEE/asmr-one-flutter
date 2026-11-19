@@ -1,12 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import 'app_motion.dart';
-
 import '../core/api/api_client.dart';
 import '../core/models/work.dart';
 import '../l10n/app_localizations.dart';
 import '../state/work_feed.dart';
+import 'app_motion.dart';
 import 'common.dart';
 import 'work_card.dart';
 

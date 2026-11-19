@@ -1,9 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-
-import 'app_motion.dart';
-
 import 'package:provider/provider.dart';
 
 import '../core/models/work.dart';
@@ -13,6 +10,7 @@ import '../l10n/app_localizations.dart';
 import '../screens/work_detail_screen.dart';
 import '../state/library_state.dart';
 import '../state/settings_state.dart';
+import 'app_motion.dart';
 import 'common.dart';
 
 /// 网格模式的作品卡片。

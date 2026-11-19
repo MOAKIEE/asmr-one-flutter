@@ -2,13 +2,11 @@ import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-
-import 'app_motion.dart';
-
 import 'package:shimmer/shimmer.dart';
 
 import '../core/theme/app_theme.dart';
 import '../l10n/app_localizations.dart';
+import 'app_motion.dart';
 import 'work_grid.dart';
 
 /// 封面图：带渐变占位、可选模糊（成人内容打码）与圆角。
@@ -42,6 +40,14 @@ class CoverImage extends StatefulWidget {
 
 class _CoverImageState extends State<CoverImage> {
   bool _revealed = false;
+
+  @override
+  void didUpdateWidget(CoverImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.seedId != oldWidget.seedId || widget.blur != oldWidget.blur) {
+      _revealed = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -265,6 +271,11 @@ class ErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final details = Text(
+      message,
+      textAlign: TextAlign.center,
+      style: Theme.of(context).textTheme.bodyMedium,
+    );
     return Center(
       child: Padding(
         padding: EdgeInsets.all(compact ? 16 : 32),
@@ -280,11 +291,12 @@ class ErrorView extends StatelessWidget {
               child: Icon(icon, size: compact ? 24 : 30, color: scheme.error),
             ),
             const SizedBox(height: 14),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            if (compact)
+              Flexible(
+                child: SingleChildScrollView(primary: false, child: details),
+              )
+            else
+              details,
             if (onRetry != null) ...[
               const SizedBox(height: 16),
               FilledButton.tonalIcon(

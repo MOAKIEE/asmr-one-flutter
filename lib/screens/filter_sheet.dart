@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/models/work.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/app_motion.dart';
 import 'tag_picker_screen.dart';
 
 /// 弹出筛选面板，返回新的查询条件；用户取消时返回 null。
@@ -94,8 +95,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                                 ChoiceChip(
                                   label: Text(_orderLabel(l, o)),
                                   selected: _order == o,
-                                  onSelected: (_) =>
-                                      setState(() => _order = o),
+                                  onSelected: (_) => setState(() => _order = o),
                                 ),
                           ],
                         ),
@@ -128,7 +128,10 @@ class _FilterSheetState extends State<_FilterSheet> {
                       width: double.infinity,
                       child: SegmentedButton<int>(
                         segments: [
-                          ButtonSegment(value: -1, label: Text(l('common.all'))),
+                          ButtonSegment(
+                            value: -1,
+                            label: Text(l('common.all')),
+                          ),
                           ButtonSegment(
                             value: 0,
                             label: Text(l('work.general')),
@@ -331,9 +334,7 @@ class _FilterSection extends StatelessWidget {
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: BorderSide(
-          color: scheme.outlineVariant.withValues(alpha: 0.4),
-        ),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
@@ -385,9 +386,7 @@ class _SwitchTile extends StatelessWidget {
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: scheme.outlineVariant.withValues(alpha: 0.4),
-        ),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
       ),
       clipBehavior: Clip.antiAlias,
       child: SwitchListTile(
@@ -435,6 +434,7 @@ class ActiveFilterBar extends StatelessWidget {
     if (query.nsfw != null) {
       chips.add(
         _Chip(
+          key: const ValueKey('nsfw'),
           label: query.nsfw! ? l('work.adult') : l('work.general'),
           onDeleted: onClearNsfw,
         ),
@@ -443,6 +443,7 @@ class ActiveFilterBar extends StatelessWidget {
     if (query.rate != null) {
       chips.add(
         _Chip(
+          key: const ValueKey('rate'),
           label: '≥ ${query.rate!.toStringAsFixed(1)}',
           onDeleted: onAdjustRate,
         ),
@@ -451,6 +452,7 @@ class ActiveFilterBar extends StatelessWidget {
     if (query.duration != null && query.duration! > 0) {
       chips.add(
         _Chip(
+          key: const ValueKey('duration'),
           label: '≥ ${query.duration! ~/ 60} min',
           onDeleted: onClearDuration,
         ),
@@ -459,6 +461,7 @@ class ActiveFilterBar extends StatelessWidget {
     if (query.subtitle == true) {
       chips.add(
         _Chip(
+          key: const ValueKey('subtitle'),
           label: l('work.subtitle'),
           onDeleted: onClearSubtitle ?? onClear,
         ),
@@ -467,6 +470,7 @@ class ActiveFilterBar extends StatelessWidget {
     if (query.includeTranslationWorks == true) {
       chips.add(
         _Chip(
+          key: const ValueKey('translation'),
           label: l('browse.withTranslation'),
           onDeleted: onClearTranslation ?? onClear,
         ),
@@ -475,44 +479,102 @@ class ActiveFilterBar extends StatelessWidget {
     for (final id in query.tags) {
       chips.add(
         _Chip(
+          key: ValueKey(id),
           label: '# ${tagLabels[id] ?? id}',
           onDeleted: () => onRemoveTag(id),
         ),
       );
     }
 
-    if (chips.isEmpty) return const SizedBox.shrink();
-
     final hasClearable =
         onClearNsfw != null || query.copyWith(clearNsfw: true).hasFilters;
 
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        children: [
-          for (final c in chips)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Center(child: c),
-            ),
-          if (hasClearable)
-            Center(
-              child: TextButton.icon(
-                onPressed: onClear,
-                icon: const Icon(Icons.filter_alt_off_outlined, size: 16),
-                label: Text(l('browse.clearFilters')),
-              ),
-            ),
-        ],
+    if (chips.isNotEmpty && hasClearable) {
+      chips.add(
+        TextButton.icon(
+          key: const ValueKey('clear'),
+          onPressed: onClear,
+          icon: const Icon(Icons.filter_alt_off_outlined, size: 16),
+          label: Text(l('browse.clearFilters')),
+        ),
+      );
+    }
+    return AnimatedSize(
+      duration: AppMotion.duration(context, AppMotion.standard),
+      alignment: Alignment.topCenter,
+      child: SizedBox(
+        height: chips.isEmpty ? 0 : 44,
+        child: _FilterChipList(chips),
       ),
     );
   }
 }
 
+class _FilterChipList extends StatefulWidget {
+  const _FilterChipList(this.chips);
+  final List<Widget> chips;
+
+  @override
+  State<_FilterChipList> createState() => _FilterChipListState();
+}
+
+class _FilterChipListState extends State<_FilterChipList> {
+  final _list = GlobalKey<AnimatedListState>();
+
+  @override
+  void didUpdateWidget(_FilterChipList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final duration = AppMotion.duration(context, AppMotion.standard);
+    final previous = [...oldWidget.chips];
+    final keys = widget.chips.map((chip) => chip.key).toSet();
+    void remove(int index) {
+      final chip = previous.removeAt(index);
+      _list.currentState!.removeItem(
+        index,
+        (_, animation) => ExcludeSemantics(
+          child: IgnorePointer(child: _item(chip, animation)),
+        ),
+        duration: duration,
+      );
+    }
+
+    for (var i = previous.length - 1; i >= 0; i--) {
+      if (!keys.contains(previous[i].key)) remove(i);
+    }
+    for (var i = 0; i < widget.chips.length; i++) {
+      final chip = widget.chips[i];
+      if (i < previous.length && previous[i].key == chip.key) continue;
+      final oldIndex = previous.indexWhere((item) => item.key == chip.key);
+      if (oldIndex >= 0) remove(oldIndex);
+      previous.insert(i, chip);
+      _list.currentState!.insertItem(i, duration: duration);
+    }
+  }
+
+  Widget _item(Widget chip, Animation<double> animation) => SizeTransition(
+    axis: Axis.horizontal,
+    sizeFactor: animation,
+    child: FadeTransition(
+      opacity: animation,
+      child: Padding(
+        padding: const EdgeInsetsDirectional.only(end: 8),
+        child: Center(child: chip),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => AnimatedList(
+    key: _list,
+    initialItemCount: widget.chips.length,
+    scrollDirection: Axis.horizontal,
+    padding: const EdgeInsets.symmetric(horizontal: 14),
+    itemBuilder: (_, index, animation) => _item(widget.chips[index], animation),
+  );
+}
+
 class _Chip extends StatelessWidget {
-  const _Chip({required this.label, this.onDeleted});
+  const _Chip({super.key, required this.label, this.onDeleted});
 
   final String label;
   final VoidCallback? onDeleted;

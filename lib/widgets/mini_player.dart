@@ -1,7 +1,4 @@
 import 'package:flutter/material.dart';
-
-import 'app_motion.dart';
-
 import 'package:provider/provider.dart';
 
 import '../core/theme/app_theme.dart';
@@ -9,16 +6,18 @@ import '../core/utils/formatters.dart';
 import '../l10n/app_localizations.dart';
 import '../screens/player_screen.dart';
 import '../state/player_state.dart';
+import 'app_motion.dart';
 import 'common.dart';
 
 /// 悬浮在页面底部的迷你播放条。
 class MiniPlayer extends StatelessWidget {
-  const MiniPlayer({super.key});
+  const MiniPlayer({super.key, this.item});
+  final PlayItem? item;
 
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerState>();
-    final item = player.currentItem;
+    final item = this.item ?? player.currentItem;
     if (item == null) return const SizedBox.shrink();
 
     final theme = Theme.of(context);

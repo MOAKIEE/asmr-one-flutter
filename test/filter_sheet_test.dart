@@ -107,4 +107,40 @@ void main() {
     expect(clearedTranslation, isTrue);
     expect(clearedAll, isFalse);
   });
+
+  testWidgets('filter chips support overlapping removals and insertions', (
+    tester,
+  ) async {
+    final query = ValueNotifier(const WorkQuery(tags: [1, 2, 3]));
+    addTearDown(query.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ValueListenableBuilder(
+            valueListenable: query,
+            builder: (_, value, _) => ActiveFilterBar(
+              query: value,
+              tagLabels: const {},
+              onRemoveTag: (_) {},
+              onClear: () {},
+              onAdjustRate: () {},
+              onClearDuration: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    query.value = const WorkQuery(tags: [3, 1, 4]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    query.value = const WorkQuery(tags: []);
+    await tester.pump();
+    query.value = const WorkQuery(tags: [2, 4]);
+    await tester.pumpAndSettle();
+    expect(find.text('# 1'), findsNothing);
+    expect(find.text('# 2'), findsOneWidget);
+    expect(find.text('# 3'), findsNothing);
+    expect(find.text('# 4'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

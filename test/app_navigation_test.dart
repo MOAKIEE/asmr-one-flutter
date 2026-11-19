@@ -89,6 +89,7 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
     expect(find.byType(MiniPlayer), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 220));
     final navigation = find.byType(NavigationBar);
     expect(
       tester.getRect(find.byType(MiniPlayer)).bottom,
@@ -138,6 +139,9 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(find.byType(MiniPlayer), findsOneWidget);
     await tester.tap(find.byIcon(Icons.close_rounded));
+    await tester.pump();
+    expect(player.currentItem, isNull);
+    await tester.pump(const Duration(milliseconds: 220));
     await tester.pump();
     expect(find.byType(MiniPlayer), findsNothing);
     await tester.pumpWidget(const SizedBox());

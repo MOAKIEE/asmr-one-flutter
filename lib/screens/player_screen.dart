@@ -2,9 +2,6 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-
-import '../widgets/app_motion.dart';
-
 import 'package:just_audio/just_audio.dart' as ja;
 import 'package:provider/provider.dart';
 
@@ -12,6 +9,7 @@ import '../core/utils/formatters.dart';
 import '../l10n/app_localizations.dart';
 import '../state/player_state.dart';
 import '../state/settings_state.dart';
+import '../widgets/app_motion.dart';
 import '../widgets/common.dart';
 import 'listening_tools_screen.dart';
 
@@ -322,10 +320,11 @@ class _ProgressBarState extends State<_ProgressBar> {
                     value: value,
                     onChanged: (v) => setState(() => _dragValue = v),
                     onChangeEnd: (v) {
-                      if (totalMs > 0)
+                      if (totalMs > 0) {
                         player.seek(
                           Duration(milliseconds: (totalMs * v).round()),
                         );
+                      }
                       setState(() => _dragValue = null);
                     },
                   ),
@@ -702,11 +701,14 @@ class _QueueSheet extends StatelessWidget {
                 return ListTile(
                   selected: isCurrent,
                   selectedTileColor: scheme.primary.withValues(alpha: 0.1),
-                  leading: Icon(
-                    isCurrent
-                        ? Icons.graphic_eq_rounded
-                        : Icons.music_note_outlined,
-                    color: isCurrent ? scheme.primary : null,
+                  leading: MotionFade(
+                    child: Icon(
+                      isCurrent
+                          ? Icons.graphic_eq_rounded
+                          : Icons.music_note_outlined,
+                      key: ValueKey(isCurrent),
+                      color: isCurrent ? scheme.primary : null,
+                    ),
                   ),
                   title: Text(
                     Fmt.stripExt(item.title),
