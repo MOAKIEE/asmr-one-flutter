@@ -2,13 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api/api_client.dart';
+import '../core/app_info.dart';
+import '../core/models/release.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/formatters.dart';
 import '../l10n/app_localizations.dart';
 import '../state/auth_state.dart';
 import '../state/download_state.dart';
 import '../state/library_state.dart';
+import '../state/update_state.dart';
 import '../widgets/common.dart';
+import '../widgets/update_sheet.dart';
 import 'downloads_screen.dart';
 import 'library_lists.dart';
 import 'login_screen.dart';
@@ -25,6 +29,10 @@ class LibraryScreen extends StatelessWidget {
     final auth = context.watch<AuthState>();
     final library = context.watch<LibraryState>();
     final downloads = context.watch<DownloadState>();
+    final updates = context.watchUpdateOrNull();
+    final version = AppVersion.normalizeLabel(
+      updates?.currentVersion ?? AppInfo.fallbackVersion,
+    );
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
@@ -52,7 +60,11 @@ class LibraryScreen extends StatelessWidget {
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const SettingsScreen()),
                   ),
-                  icon: const Icon(Icons.settings_outlined),
+                  icon: Badge(
+                    isLabelVisible: updates?.hasUnignoredUpdate == true,
+                    backgroundColor: scheme.primary,
+                    child: const Icon(Icons.settings_outlined),
+                  ),
                 ),
               ],
             ),
@@ -152,11 +164,92 @@ class LibraryScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
+          if (updates != null &&
+              updates.hasUnignoredUpdate &&
+              updates.latestRelease != null) ...[
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: FilledButton.tonalIcon(
+                  onPressed: () => showUpdateSheet(
+                    context,
+                    release: updates.latestRelease!,
+                    currentVersion: updates.currentVersion,
+                    onIgnore: () =>
+                        updates.ignoreRelease(updates.latestRelease!.tagName),
+                  ),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                  ),
+                  icon: const Icon(Icons.system_update_rounded, size: 17),
+                  label: Text(
+                    l('update.foundShort', {
+                      'version': updates.latestRelease!.versionTag,
+                    }),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           Center(
-            child: Text(
-              '${l('settings.version')} 1.2.0 · ${ApiClient.instance.baseUrlHost}',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '${l('settings.version')} $version · ${ApiClient.instance.baseUrlHost}',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.72),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () => openExternalUrl(context, AppInfo.repoUrl),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.code_rounded,
+                        size: 14,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'GitHub · ${AppInfo.repoSlug}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: scheme.onSurfaceVariant.withValues(
+                              alpha: 0.8,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.open_in_new_rounded,
+                        size: 12,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

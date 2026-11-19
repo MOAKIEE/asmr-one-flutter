@@ -33,6 +33,9 @@ class AppPrefs {
   static const _kSleepMinutes = 'player.sleepMinutes';
   static const _kFirstRun = 'app.firstRun';
   static const _kTagCatalogVersion = 'tag.catalogVersion';
+  static const _kAutoCheckUpdate = 'update.autoCheck';
+  static const _kIgnoredUpdateVersion = 'update.ignoredVersion';
+  static const _kLastUpdateCheckMs = 'update.lastCheckMs';
 
   // --- 鉴权 ---
   String? get token {
@@ -172,6 +175,29 @@ class AppPrefs {
   int get tagCatalogVersion => _sp.getInt(_kTagCatalogVersion) ?? 0;
 
   set tagCatalogVersion(int v) => _sp.setInt(_kTagCatalogVersion, v);
+
+  // --- 更新检查 ---
+  bool get autoCheckUpdate => _sp.getBool(_kAutoCheckUpdate) ?? true;
+
+  set autoCheckUpdate(bool v) => _sp.setBool(_kAutoCheckUpdate, v);
+
+  String? get ignoredUpdateVersion {
+    final v = _sp.getString(_kIgnoredUpdateVersion)?.trim();
+    return (v == null || v.isEmpty) ? null : v;
+  }
+
+  set ignoredUpdateVersion(String? value) {
+    final v = value?.trim();
+    if (v == null || v.isEmpty) {
+      _sp.remove(_kIgnoredUpdateVersion);
+    } else {
+      _sp.setString(_kIgnoredUpdateVersion, v);
+    }
+  }
+
+  int get lastUpdateCheckMs => _sp.getInt(_kLastUpdateCheckMs) ?? 0;
+
+  set lastUpdateCheckMs(int v) => _sp.setInt(_kLastUpdateCheckMs, v);
 
   /// 导出全部偏好（用于设置页展示 / 调试）。
   String dump() => jsonEncode({

@@ -800,12 +800,13 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
-        find.byIcon(Icons.tag_rounded),
+        find.textContaining('版本'),
         300,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
-      expect(find.text('版本'), findsOneWidget);
+      expect(find.text('GitHub 仓库'), findsOneWidget);
+      expect(find.textContaining('版本'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
       await tester.pumpWidget(const SizedBox());

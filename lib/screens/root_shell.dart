@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../state/update_state.dart';
 import '../widgets/app_motion.dart';
 import '../widgets/player_scaffold.dart';
+import '../widgets/update_sheet.dart';
 import 'browse_screen.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
@@ -23,9 +25,52 @@ class _RootShellState extends State<RootShell>
     duration: AppMotion.quick,
     value: 1,
   );
+  UpdateState? _updates;
+  bool _showingUpdateSheet = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final updates = context.readUpdateOrNull();
+    if (!identical(_updates, updates)) {
+      _updates?.removeListener(_maybePromptUpdate);
+      _updates = updates;
+      _updates?.addListener(_maybePromptUpdate);
+      _maybePromptUpdate();
+    }
+  }
+
+  void _maybePromptUpdate() {
+    final updates = _updates;
+    if (updates == null || _showingUpdateSheet || !updates.shouldAutoPrompt) {
+      return;
+    }
+    final release = updates.latestRelease;
+    if (release == null) return;
+
+    updates.markPrompted();
+    _showingUpdateSheet = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        _showingUpdateSheet = false;
+        return;
+      }
+      try {
+        await showUpdateSheet(
+          context,
+          release: release,
+          currentVersion: updates.currentVersion,
+          onIgnore: () => updates.ignoreRelease(release.tagName),
+        );
+      } finally {
+        _showingUpdateSheet = false;
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _updates?.removeListener(_maybePromptUpdate);
     _fade.dispose();
     super.dispose();
   }

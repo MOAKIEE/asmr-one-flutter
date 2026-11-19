@@ -13,6 +13,7 @@ import 'state/download_state.dart';
 import 'state/library_state.dart';
 import 'state/player_state.dart';
 import 'state/settings_state.dart';
+import 'state/update_state.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -99,6 +100,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
   late final LibraryState _library;
   late final PlayerState _player;
   late final DownloadState _downloads;
+  late final UpdateState _updates;
 
   @override
   void initState() {
@@ -117,6 +119,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
       readQueue: () => _library.readDocument('downloadQueue'),
       writeQueue: (value) => _library.writeDocument('downloadQueue', value),
     );
+    _updates = UpdateState(widget.prefs);
     unawaited(_bootstrap());
   }
 
@@ -124,12 +127,16 @@ class _BootstrapAppState extends State<BootstrapApp> {
     await _library.refresh();
     await _player.restoreSession();
     await _downloads.initialize();
+    await _updates.initVersion();
     // 校验本地令牌；网络异常时保持离线可用。
     await _auth.bootstrap();
+    // 静默检查更新，不阻塞首屏且离线可用。
+    unawaited(_updates.checkForUpdates());
   }
 
   @override
   void dispose() {
+    _updates.dispose();
     _downloads.dispose();
     _player.dispose();
     _library.dispose();
@@ -147,6 +154,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
         ChangeNotifierProvider<LibraryState>.value(value: _library),
         ChangeNotifierProvider<PlayerState>.value(value: _player),
         ChangeNotifierProvider<DownloadState>.value(value: _downloads),
+        ChangeNotifierProvider<UpdateState>.value(value: _updates),
       ],
       child: const AsmrOneApp(),
     );
