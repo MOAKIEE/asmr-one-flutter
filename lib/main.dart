@@ -11,6 +11,7 @@ import 'core/storage/library_db.dart';
 import 'state/auth_state.dart';
 import 'state/download_state.dart';
 import 'state/library_state.dart';
+import 'state/listening_notes.dart';
 import 'state/player_state.dart';
 import 'state/settings_state.dart';
 import 'state/update_state.dart';
@@ -99,6 +100,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
   late final AuthState _auth;
   late final LibraryState _library;
   late final PlayerState _player;
+  late final ListeningNotes _notes;
   late final DownloadState _downloads;
   late final UpdateState _updates;
 
@@ -113,6 +115,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
       readSession: _library.readDocuments,
       writeSession: _library.writeDocuments,
     );
+    _notes = ListeningNotes(_library, _player, settings: _settings);
     _auth = AuthState(widget.prefs, onTokenChanged: _player.refreshTokens);
     _downloads = DownloadState(
       _library,
@@ -138,6 +141,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
   void dispose() {
     _updates.dispose();
     _downloads.dispose();
+    _notes.dispose();
     _player.dispose();
     _library.dispose();
     _auth.dispose();
@@ -153,6 +157,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
         ChangeNotifierProvider<AuthState>.value(value: _auth),
         ChangeNotifierProvider<LibraryState>.value(value: _library),
         ChangeNotifierProvider<PlayerState>.value(value: _player),
+        ChangeNotifierProvider<ListeningNotes>.value(value: _notes),
         ChangeNotifierProvider<DownloadState>.value(value: _downloads),
         ChangeNotifierProvider<UpdateState>.value(value: _updates),
       ],

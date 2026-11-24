@@ -25,11 +25,26 @@ void main() {
       positionMs: 4000,
       durationMs: 10000,
     );
-    await db.writeDocument('downloadQueue', {
-      'url': 'https://example.invalid?token=secret',
-    });
-    final backup = await db.exportBackup();
-    expect(backup, isNot(contains('secret')));
+      await db.writeDocument('downloadQueue', {
+        'url': 'https://example.invalid?token=secret',
+      });
+      await db.writeDocument('matchedSubtitle:501:501/a', {
+        'attachmentId': '501/sub',
+        'name': '01.lrc',
+        'source': '[00:01.00]AutoCached',
+        'language': 'zh-hans',
+        'ruleVersion': 1,
+        'offsetMs': 0,
+      });
+      await db.writeDocument('subtitle:501:501/a', {
+        'name': 'manual.lrc',
+        'source': '[00:01.00]ManualSaved',
+        'offsetMs': 500,
+      });
+      final backup = await db.exportBackup();
+      expect(backup, isNot(contains('secret')));
+      expect(backup, isNot(contains('AutoCached')));
+      expect(backup, contains('ManualSaved'));
     await db.clearFavorites();
     await db.deleteLocalPlaylist(playlist);
     await db.createLocalPlaylist('Unrelated');

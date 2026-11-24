@@ -21,10 +21,14 @@ class LibraryState extends ChangeNotifier {
   Future<String> exportBackup() => _serial(_db.exportBackup);
   Future<void> importBackup(String source) async {
     await _serial(() => _db.importBackup(source));
+    _documentsVersion++;
     await refresh();
   }
 
   Future<void> _lock = Future.value();
+  int _documentsVersion = 0;
+
+  int get documentsVersion => _documentsVersion;
 
   List<Work> _favorites = const [];
   List<Work> _history = const [];
@@ -214,6 +218,7 @@ class LibraryState extends ChangeNotifier {
     }
     await _db.clearProgress();
     await _db.clearDocuments();
+    _documentsVersion++;
     _favorites = const [];
     _favoriteIds = {};
     _history = const [];

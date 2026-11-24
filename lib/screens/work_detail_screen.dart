@@ -15,6 +15,7 @@ import '../l10n/app_localizations.dart';
 import '../state/auth_state.dart';
 import '../state/download_state.dart';
 import '../state/library_state.dart';
+import '../state/listening_notes.dart';
 import '../state/player_state.dart';
 import '../state/settings_state.dart';
 import '../widgets/app_motion.dart';
@@ -97,6 +98,11 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     try {
       final nodes = await _api.fetchTracks(_work.id);
       if (!mounted) return;
+      try {
+        context.read<ListeningNotes>().cacheTrackTree(_work.id, nodes);
+      } on ProviderNotFoundException {
+        // Standalone detail widget tests may omit app-level ListeningNotes.
+      }
       setState(() {
         _tracks = nodes;
         _flatTracks = nodes.expand((n) => n.flatten()).toList();

@@ -7,10 +7,12 @@ import 'package:provider/provider.dart';
 
 import '../core/utils/formatters.dart';
 import '../l10n/app_localizations.dart';
+import '../state/listening_notes.dart';
 import '../state/player_state.dart';
 import '../state/settings_state.dart';
 import '../widgets/app_motion.dart';
 import '../widgets/common.dart';
+import '../widgets/player_subtitle_view.dart';
 import 'listening_tools_screen.dart';
 
 /// 全屏播放器。
@@ -23,10 +25,38 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
+  bool _localShowSubtitles = false;
+
+  ListeningNotes? _watchNotes(BuildContext context) {
+    try {
+      return context.watch<ListeningNotes>();
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  void _toggleSubtitles(ListeningNotes? notes) {
+    if (notes != null) {
+      notes.showPlayerSubtitles = !notes.showPlayerSubtitles;
+    } else {
+      setState(() => _localShowSubtitles = !_localShowSubtitles);
+    }
+  }
+
+  void _openTools({bool expandReplace = false}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ListeningToolsScreen(expandReplace: expandReplace),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = L10n.of(context);
     final player = context.watch<PlayerState>();
+    final notes = _watchNotes(context);
+    final showSubtitles = notes?.showPlayerSubtitles ?? _localShowSubtitles;
     final item = player.currentItem;
     final scheme = Theme.of(context).colorScheme;
 
@@ -47,11 +77,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
         title: Text(l('player.title')),
         actions: [
           IconButton(
-            tooltip: l('notes.title'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ListeningToolsScreen()),
-            ),
-            icon: const Icon(Icons.subtitles_outlined),
+            tooltip: l('notes.toolsTitle'),
+            onPressed: () => _openTools(),
+            icon: const Icon(Icons.tune_rounded),
           ),
           IconButton(
             tooltip: l('player.queue'),
@@ -83,13 +111,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final compact = constraints.maxHeight < 580;
+                final compact = constraints.maxHeight < 600;
                 final coverSize = math
                     .min(
-                      constraints.maxHeight * (compact ? 0.3 : 0.34),
+                      constraints.maxHeight * (compact ? 0.28 : 0.34),
                       constraints.maxWidth - 52,
                     )
-                    .clamp(120.0, 320.0);
+                    .clamp(120.0, 300.0);
+                final stageContentHeight = compact
+                    ? math.max(
+                        coverSize,
+                        (constraints.maxHeight * 0.38).clamp(180.0, 236.0),
+                      )
+                    : math.max(
+                        coverSize,
+                        (constraints.maxHeight * 0.42).clamp(244.0, 350.0),
+                      );
 
                 return SingleChildScrollView(
                   padding: EdgeInsets.fromLTRB(
@@ -106,34 +143,71 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     child: IntrinsicHeight(
                       child: Column(
                         children: [
-                          const Spacer(flex: 2),
-                          Container(
-                            width: coverSize,
-                            height: coverSize,
-                            decoration: BoxDecoration(
-                              color: scheme.surfaceContainer,
-                              borderRadius: BorderRadius.circular(24),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.28),
-                                  blurRadius: 24,
-                                  offset: const Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            child: CoverHero(
-                              tag: widget.coverTag,
-                              child: MotionFade(
-                                child: CoverImage(
-                                  key: ValueKey(item.workId),
-                                  url: item.coverUrl,
-                                  seedId: item.workId,
-                                  radius: 24,
-                                ),
+                          const Spacer(),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              _StageToggleButton(
+                                showSubtitles: showSubtitles,
+                                onPressed: () => _toggleSubtitles(notes),
                               ),
-                            ),
+                            ],
                           ),
-                          const Spacer(flex: 2),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            height: stageContentHeight,
+                            child: showSubtitles && notes != null
+                                ? PlayerSubtitleView(
+                                    key: const ValueKey('player-subtitles'),
+                                    player: player,
+                                    notes: notes,
+                                    onOpenReplace: () =>
+                                        _openTools(expandReplace: true),
+                                  )
+                                : Center(
+                                    child: Semantics(
+                                      button: true,
+                                      label: l('player.showSubtitles'),
+                                      child: GestureDetector(
+                                        key: const ValueKey('player-cover-tap'),
+                                        onTap: () => _toggleSubtitles(notes),
+                                        child: Container(
+                                          width: coverSize,
+                                          height: coverSize,
+                                          decoration: BoxDecoration(
+                                            color: scheme.surfaceContainer,
+                                            borderRadius: BorderRadius.circular(
+                                              24,
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.28,
+                                                ),
+                                                blurRadius: 24,
+                                                offset: const Offset(0, 10),
+                                              ),
+                                            ],
+                                          ),
+                                          child: CoverHero(
+                                            tag: widget.coverTag,
+                                            child: MotionFade(
+                                              child: CoverImage(
+                                                key: ValueKey(item.workId),
+                                                url: item.coverUrl,
+                                                seedId: item.workId,
+                                                radius: 24,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                          const Spacer(),
+                          SizedBox(height: compact ? 8 : 12),
                           MotionFade(
                             child: Text(
                               Fmt.stripExt(item.title),
@@ -145,7 +219,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                   ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           Text(
                             item.folderLabel.isEmpty
                                 ? item.workTitle
@@ -166,9 +240,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               onDismiss: player.clearError,
                             ),
                           ],
-                          SizedBox(height: compact ? 14 : 22),
+                          SizedBox(height: compact ? 10 : 18),
                           _ProgressBar(player: player),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           FadeTransition(
                             opacity: MediaQuery.disableAnimationsOf(context)
                                 ? const AlwaysStoppedAnimation(1)
@@ -212,6 +286,66 @@ class _PlayerScreenState extends State<PlayerScreen> {
       builder: (_) => ChangeNotifierProvider<PlayerState>.value(
         value: player,
         child: const _QueueSheet(),
+      ),
+    );
+  }
+}
+
+class _StageToggleButton extends StatelessWidget {
+  const _StageToggleButton({
+    required this.showSubtitles,
+    required this.onPressed,
+  });
+
+  final bool showSubtitles;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L10n.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final label = showSubtitles
+        ? l('player.showCover')
+        : l('player.showSubtitles');
+    final color = showSubtitles ? scheme.primary : scheme.onSurfaceVariant;
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: showSubtitles
+            ? scheme.primary.withValues(alpha: 0.14)
+            : scheme.surfaceContainerHigh.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          key: const ValueKey('player-stage-toggle'),
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(999),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  showSubtitles
+                      ? Icons.album_outlined
+                      : Icons.subtitles_outlined,
+                  size: 16,
+                  color: color,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelMedium?.copyWith(color: color),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

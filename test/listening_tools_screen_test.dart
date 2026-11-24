@@ -1,30 +1,34 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:asmr_one/core/models/track.dart';
+import 'package:asmr_one/core/models/work.dart';
+import 'package:asmr_one/core/storage/app_prefs.dart';
+import 'package:asmr_one/screens/listening_tools_screen.dart';
+import 'package:asmr_one/screens/player_screen.dart';
+import 'package:asmr_one/state/library_state.dart';
+import 'package:asmr_one/state/listening_notes.dart';
+import 'package:asmr_one/state/player_state.dart';
+import 'package:asmr_one/state/settings_state.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:asmr_one/core/models/work.dart';
-import 'package:asmr_one/core/storage/app_prefs.dart';
-import 'package:asmr_one/screens/listening_tools_screen.dart';
-import 'package:asmr_one/state/library_state.dart';
-import 'package:asmr_one/state/player_state.dart';
-import 'package:asmr_one/state/settings_state.dart';
 
 import 'listening_notes_test.dart' show NotesLibrary;
 import 'player_state_test.dart' show TestAudio, TestLibrary;
 
 void main() {
   testWidgets(
-    'small-screen subtitle and bookmark controls work without overflow',
+    'small-screen listening tools subtitle settings, offset, restore auto, and bookmark controls work without overflow',
     (tester) async {
       tester.view.physicalSize = const Size(360, 640);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      SharedPreferences.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({'ui.useCoverAccent': false});
       final settings = SettingsState(await AppPrefs.load());
       final audio = TestAudio();
       final player = PlayerState(
@@ -42,12 +46,22 @@ void main() {
         'source': '[00:01.00]A quiet evening\n[00:03.00]Time to rest',
         'offsetMs': 0,
       };
+      final notes = ListeningNotes(
+        library,
+        player,
+        settings: settings,
+        checkNetwork: () async => [ConnectivityResult.none],
+      );
+      await notes.reload();
+
       final boundary = GlobalKey();
       await tester.pumpWidget(
         MultiProvider(
           providers: [
+            ChangeNotifierProvider<SettingsState>.value(value: settings),
             ChangeNotifierProvider<PlayerState>.value(value: player),
             ChangeNotifierProvider<LibraryState>.value(value: library),
+            ChangeNotifierProvider<ListeningNotes>.value(value: notes),
           ],
           child: MaterialApp(
             home: RepaintBoundary(
@@ -58,11 +72,23 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Time to rest'), findsOneWidget);
-      await tester.tap(find.text('Time to rest'));
+
+      // Subtitle settings tab shows file name, source, offset controls, restore auto, and replace expander.
+      // No duplicate cue list in ListeningToolsScreen.
+      expect(find.text('收听工具'), findsOneWidget);
+      expect(find.text('字幕设置'), findsOneWidget);
+      expect(find.text('sample.lrc'), findsOneWidget);
+      expect(find.text('恢复自动匹配'), findsOneWidget);
+      expect(find.text('更换字幕'), findsOneWidget);
+      expect(find.text('Time to rest'), findsNothing);
+
+      // Adjust offset by +0.5s.
+      await tester.tap(find.byTooltip('+0.5s'));
       await tester.pumpAndSettle();
-      expect(audio.position, const Duration(seconds: 3));
+      expect(notes.offsetMs, 500);
+      expect(find.text('+0.5s'), findsOneWidget);
       expect(tester.takeException(), isNull);
+
       if (Platform.environment['ASMR_QA_DIR'] case final String directory) {
         await tester.runAsync(() async {
           final image =
@@ -76,6 +102,8 @@ void main() {
           image.dispose();
         });
       }
+
+      // Switch to Bookmarks tab and create a bookmark.
       await tester.tap(find.text('书签'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('标记当前时间'));
@@ -85,7 +113,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Favorite moment'), findsOneWidget);
       expect(tester.takeException(), isNull);
+
       await tester.pumpWidget(const SizedBox());
+      notes.dispose();
       player.dispose();
       library.dispose();
       settings.dispose();
@@ -93,13 +123,13 @@ void main() {
   );
 
   testWidgets(
-    'long multiline subtitles wrap naturally at 1.35x text scale without overflow',
+    'long multiline subtitles wrap naturally in PlayerScreen at 1.35x text scale without overflow',
     (tester) async {
       tester.view.physicalSize = const Size(360, 640);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      SharedPreferences.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({'ui.useCoverAccent': false});
       final settings = SettingsState(await AppPrefs.load());
       final audio = TestAudio();
       final player = PlayerState(
@@ -107,9 +137,18 @@ void main() {
         library: TestLibrary(),
         audioPlayer: audio,
       );
-      await player.playLocalFiles(
+      await player.playWork(
         Work.fromJson({'id': 2, 'title': 'Multiline work'}),
-        {'track1': '/track1.mp3'},
+        [
+          const AudioTrack(
+            node: TrackNode(
+              type: 'audio',
+              title: 'track1.mp3',
+              hash: 'track1',
+              mediaStreamUrl: 'https://example.invalid/track1.mp3',
+            ),
+          ),
+        ],
       );
       final library = NotesLibrary();
       const longCue =
@@ -122,11 +161,21 @@ void main() {
         'source': 'WEBVTT\n\n00:00:01.000 --> 00:00:08.000\n$longCue',
         'offsetMs': 0,
       };
+      final notes = ListeningNotes(
+        library,
+        player,
+        settings: settings,
+        checkNetwork: () async => [ConnectivityResult.none],
+      );
+      await notes.reload();
+
       await tester.pumpWidget(
         MultiProvider(
           providers: [
+            ChangeNotifierProvider<SettingsState>.value(value: settings),
             ChangeNotifierProvider<PlayerState>.value(value: player),
             ChangeNotifierProvider<LibraryState>.value(value: library),
+            ChangeNotifierProvider<ListeningNotes>.value(value: notes),
           ],
           child: MaterialApp(
             builder: (context, child) => MediaQuery(
@@ -135,15 +184,22 @@ void main() {
               ),
               child: child!,
             ),
-            home: const ListeningToolsScreen(),
+            home: const PlayerScreen(),
           ),
         ),
       );
       await tester.pumpAndSettle();
+
+      // Tap toggle button to show subtitles in place.
+      await tester.tap(find.byKey(const ValueKey('player-stage-toggle')));
+      await tester.pumpAndSettle();
+
       final textWidget = tester.widget<Text>(find.text(longCue));
       expect(textWidget.maxLines, isNull);
       expect(tester.takeException(), isNull);
+
       await tester.pumpWidget(const SizedBox());
+      notes.dispose();
       player.dispose();
       library.dispose();
       settings.dispose();
