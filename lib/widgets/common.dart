@@ -259,12 +259,14 @@ class ErrorView extends StatelessWidget {
     super.key,
     required this.message,
     this.onRetry,
+    this.action,
     this.icon = Icons.cloud_off_rounded,
     this.compact = false,
   });
 
   final String message;
   final VoidCallback? onRetry;
+  final Widget? action;
   final IconData icon;
   final bool compact;
 
@@ -297,12 +299,21 @@ class ErrorView extends StatelessWidget {
               )
             else
               details,
-            if (onRetry != null) ...[
+            if (action != null || onRetry != null) ...[
               const SizedBox(height: 16),
-              FilledButton.tonalIcon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: Text(L10n.of(context)('common.retry')),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  ?action,
+                  if (onRetry != null)
+                    FilledButton.tonalIcon(
+                      onPressed: onRetry,
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: Text(L10n.of(context)('common.retry')),
+                    ),
+                ],
               ),
             ],
           ],

@@ -272,6 +272,27 @@ class ApiClient {
     return asMapList(asMap(data)['tracks']).map(TrackNode.fromJson).toList();
   }
 
+  /// 相似作品推荐（保留服务端顺序，页大小以响应为准）。
+  Future<WorksPage> fetchSimilarWorks(
+    int workId, {
+    int page = 1,
+    bool subtitle = false,
+  }) async {
+    final data = await _post(
+      '/api/recommender/item-neighbors',
+      body: {
+        'keyword': '',
+        'itemId': '$workId',
+        'page': page,
+        'subtitle': subtitle ? 1 : 0,
+        'localSubtitledWorks': const <Object>[],
+        'withPlaylistStatus': const <Object>[],
+      },
+      auth: true,
+    );
+    return WorksPage.fromJson(asMap(data));
+  }
+
   /// 关键词搜索。
   Future<WorksPage> search(
     String keyword, {

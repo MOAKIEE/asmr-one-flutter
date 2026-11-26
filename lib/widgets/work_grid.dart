@@ -95,6 +95,8 @@ class WorkFeedView extends StatelessWidget {
     this.leadingSlivers = const [],
     this.sectionSpacing = 0,
     this.padding = const EdgeInsets.fromLTRB(16, 4, 16, 28),
+    this.emptyMessage,
+    this.errorActionBuilder,
   });
 
   final WorkFeed feed;
@@ -103,6 +105,9 @@ class WorkFeedView extends StatelessWidget {
   final List<Widget> leadingSlivers;
   final double sectionSpacing;
   final EdgeInsets padding;
+  final String? emptyMessage;
+  final Widget? Function(BuildContext context, WorkFeed feed)?
+  errorActionBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -119,6 +124,13 @@ class WorkFeedView extends StatelessWidget {
             final showError = feed.error != null && items.isEmpty;
             final showEmpty =
                 feed.isEmpty && !feed.loading && feed.error == null;
+            final showFilteredContinue =
+                feed.loadedOnce &&
+                items.isEmpty &&
+                feed.hasMore &&
+                !feed.loading &&
+                !feed.loadingMore &&
+                feed.error == null;
 
             return NotificationListener<ScrollNotification>(
               onNotification: (n) {
@@ -156,14 +168,32 @@ class WorkFeedView extends StatelessWidget {
                       hasScrollBody: false,
                       child: ErrorView(
                         message: feed.error ?? '',
+                        icon: feed.errorIsAuth
+                            ? Icons.lock_outline_rounded
+                            : Icons.cloud_off_rounded,
+                        action: errorActionBuilder?.call(context, feed),
                         onRetry: () => feed.load(),
+                      ),
+                    )
+                  else if (showFilteredContinue)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: EmptyView(
+                        message: L10n.of(context)('similar.loadMoreFiltered'),
+                        icon: Icons.filter_alt_outlined,
+                        action: FilledButton.tonalIcon(
+                          onPressed: feed.loadMore,
+                          icon: const Icon(Icons.expand_more_rounded, size: 18),
+                          label: Text(L10n.of(context)('common.loadMore')),
+                        ),
                       ),
                     )
                   else if (showEmpty)
                     SliverFillRemaining(
                       hasScrollBody: false,
                       child: EmptyView(
-                        message: L10n.of(context)('search.noResult'),
+                        message:
+                            emptyMessage ?? L10n.of(context)('search.noResult'),
                         icon: Icons.search_off_rounded,
                       ),
                     )

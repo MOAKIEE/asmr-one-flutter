@@ -24,6 +24,7 @@ import '../widgets/common.dart';
 import '../widgets/work_rail.dart';
 import 'player_screen.dart';
 import 'playlist_screen.dart';
+import 'similar_works_screen.dart';
 import 'tag_browse_screen.dart';
 
 /// 作品详情页。
@@ -375,6 +376,36 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
                 ),
               ),
             ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+              child: AppGroupCard(
+                radius: 16,
+                child: ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.auto_awesome_outlined,
+                      size: 20,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  title: Text(l('similar.title')),
+                  subtitle: Text(
+                    l('similar.subtitle'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _openSimilarWorks,
+                ),
+              ),
+            ),
+          ),
           if (_work.circleId > 0)
             SliverToBoxAdapter(
               child: WorkRail(
@@ -388,6 +419,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
                   order: WorkOrder.dlCount,
                   nsfw: settings.showNsfw ? null : false,
                 ),
+                api: widget.api,
               ),
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 40)),
@@ -411,6 +443,14 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => TagBrowseScreen(initialTag: tag)));
+  }
+
+  void _openSimilarWorks() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SimilarWorksScreen(work: _work, api: widget.api),
+      ),
+    );
   }
 }
 

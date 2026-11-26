@@ -8,13 +8,26 @@ import '../core/models/work.dart';
 /// 通过构造函数注入取数逻辑，因此同一套翻页 / 加载态 / 错误态逻辑
 /// 可以同时服务于首页各个栏目、浏览页与搜索结果页。
 class WorkFeed extends ChangeNotifier {
-  WorkFeed(this._fetch, {this.pageSize = 24, this.label = ''});
+  WorkFeed(
+    this._fetch, {
+    this.pageSize = 24,
+    this.label = '',
+    this.filter,
+    this.maxAutoAdvancePages = 5,
+  });
 
   final Future<WorksPage> Function(int page, int pageSize) _fetch;
   final int pageSize;
 
   /// 用于日志 / 调试的标识。
   final String label;
+
+  /// 可选的本地过滤函数（例如在服务端不支持分级参数时按全年龄过滤）。
+  /// 翻页终止条件仍以服务端原始页为准，不会把全页过滤后的空列表误判为终页。
+  final bool Function(Work work)? filter;
+
+  /// 当启用本地过滤且整页被过滤为空时，单次加载最多自动继续向后翻的页数。
+  final int maxAutoAdvancePages;
 
   final List<Work> _items = [];
   int _page = 0;
@@ -26,6 +39,7 @@ class WorkFeed extends ChangeNotifier {
   bool _loadingMore = false;
   bool _loadedOnce = false;
   String? _error;
+  bool _errorIsAuth = false;
 
   List<Work> get items => List.unmodifiable(_items);
   int get page => _page;
@@ -34,20 +48,31 @@ class WorkFeed extends ChangeNotifier {
   bool get loadingMore => _loadingMore;
   bool get loadedOnce => _loadedOnce;
   String? get error => _error;
-  bool get isEmpty => _loadedOnce && _items.isEmpty;
+  bool get errorIsAuth => _errorIsAuth;
+  bool get isEmpty => _loadedOnce && _items.isEmpty && !_hasMore;
   bool get hasMore => _hasMore;
 
   bool _disposed = false;
 
   bool _isCurrent(int generation) => !_disposed && generation == _generation;
 
-  void _appendPage(WorksPage result, int page) {
+  int _appendPage(WorksPage result, int page) {
     final seen = _items.map((work) => work.id).toSet();
-    _items.addAll(result.works.where((work) => seen.add(work.id)));
+    final raw = result.works;
+    final visible = filter == null ? raw : raw.where(filter!);
+    var added = 0;
+    for (final work in visible) {
+      if (seen.add(work.id)) {
+        _items.add(work);
+        added++;
+      }
+    }
     _page = page;
     if (page == 1 || result.totalCount > 0) _totalCount = result.totalCount;
-    _hasMore = result.works.isNotEmpty && page < result.maxPage;
+    _hasMore = raw.isNotEmpty && page < result.maxPage;
     _error = null;
+    _errorIsAuth = false;
+    return added;
   }
 
   /// 首屏加载（或筛选条件变化后重新加载）。
@@ -59,6 +84,7 @@ class WorkFeed extends ChangeNotifier {
     if (showLoading) {
       _loading = true;
       _error = null;
+      _errorIsAuth = false;
       notifyListeners();
     }
     try {
@@ -66,8 +92,22 @@ class WorkFeed extends ChangeNotifier {
       if (!_isCurrent(generation)) return;
       _items.clear();
       _appendPage(res, 1);
+      var advanced = 0;
+      while (filter != null &&
+          _items.isEmpty &&
+          _hasMore &&
+          advanced < maxAutoAdvancePages) {
+        advanced++;
+        final next = _page + 1;
+        final nextRes = await _fetch(next, pageSize);
+        if (!_isCurrent(generation)) return;
+        _appendPage(nextRes, next);
+      }
     } catch (e) {
-      if (_isCurrent(generation)) _error = e is ApiException ? e.message : '$e';
+      if (_isCurrent(generation)) {
+        _error = e is ApiException ? e.message : '$e';
+        _errorIsAuth = e is ApiException && e.isAuthError;
+      }
     } finally {
       if (_isCurrent(generation)) {
         _loadedOnce = true;
@@ -88,9 +128,24 @@ class WorkFeed extends ChangeNotifier {
     try {
       final next = _page + 1;
       final res = await _fetch(next, pageSize);
-      if (_isCurrent(generation)) _appendPage(res, next);
+      if (!_isCurrent(generation)) return;
+      var added = _appendPage(res, next);
+      var advanced = 0;
+      while (filter != null &&
+          added == 0 &&
+          _hasMore &&
+          advanced < maxAutoAdvancePages) {
+        advanced++;
+        final morePage = _page + 1;
+        final moreRes = await _fetch(morePage, pageSize);
+        if (!_isCurrent(generation)) return;
+        added += _appendPage(moreRes, morePage);
+      }
     } catch (e) {
-      if (_isCurrent(generation)) _error = e is ApiException ? e.message : '$e';
+      if (_isCurrent(generation)) {
+        _error = e is ApiException ? e.message : '$e';
+        _errorIsAuth = e is ApiException && e.isAuthError;
+      }
     } finally {
       if (_isCurrent(generation)) {
         _loadingMore = false;
@@ -102,6 +157,7 @@ class WorkFeed extends ChangeNotifier {
   void clearError() {
     if (_disposed || _error == null) return;
     _error = null;
+    _errorIsAuth = false;
     notifyListeners();
   }
 

@@ -148,6 +148,12 @@ const Map<String, String> _zh = {
   'common.refresh': '刷新',
   'common.total': '共 {n} 项',
   'common.seeAll': '查看全部',
+  'common.loadMore': '加载更多',
+
+  'similar.title': '相似作品',
+  'similar.subtitle': '跨社团发现风格相近的作品',
+  'similar.empty': '暂无相似作品',
+  'similar.loadMoreFiltered': '当前页已按分级隐藏，可继续加载下一页',
 
   'work.free': '免费',
   'work.downloads': '下载',
@@ -472,6 +478,12 @@ const Map<String, String> _ja = {
   'common.refresh': '更新',
   'common.total': '全 {n} 件',
   'common.seeAll': 'すべて見る',
+  'common.loadMore': 'さらに読み込む',
+
+  'similar.title': '類似作品',
+  'similar.subtitle': 'サークルを超えて似た作品を探す',
+  'similar.empty': '類似作品は見つかりませんでした',
+  'similar.loadMoreFiltered': '年齢設定により非表示です。次のページを読み込めます',
 
   'work.free': '無料',
   'work.downloads': 'DL数',
@@ -799,6 +811,12 @@ const Map<String, String> _en = {
   'common.refresh': 'Refresh',
   'common.total': '{n} items',
   'common.seeAll': 'See all',
+  'common.loadMore': 'Load more',
+
+  'similar.title': 'Similar works',
+  'similar.subtitle': 'Discover related works across circles',
+  'similar.empty': 'No similar works found',
+  'similar.loadMoreFiltered': 'Hidden by content filter. Load the next page',
 
   'work.free': 'Free',
   'work.downloads': 'Downloads',
