@@ -730,20 +730,28 @@ class SettingsScreen extends StatelessWidget {
         }
 
         Future<void> clearSubtitles() async {
-          await library.clearAutoSubtitleCache();
-          if (context.mounted) {
-            _toast(context, l('settings.autoSubtitleCacheCleared'));
+          try {
+            await library.clearAutoSubtitleCache();
+            if (context.mounted) {
+              _toast(context, l('settings.autoSubtitleCacheCleared'));
+            }
+          } catch (_) {
+            if (context.mounted) _toast(context, l('common.error'));
           }
         }
 
         Future<void> clearAll() async {
-          await DefaultCacheManager().emptyCache();
-          await audioCache?.clearAll();
-          if (subtitleStats.count > 0) {
-            await library.clearAutoSubtitleCache();
+          try {
+            await DefaultCacheManager().emptyCache();
+            await audioCache?.clearAll();
+            if (subtitleStats.count > 0) {
+              await library.clearAutoSubtitleCache();
+            }
+            if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+            if (context.mounted) _toast(context, l('settings.cacheCleared'));
+          } catch (_) {
+            if (context.mounted) _toast(context, l('common.error'));
           }
-          if (sheetContext.mounted) Navigator.of(sheetContext).pop();
-          if (context.mounted) _toast(context, l('settings.cacheCleared'));
         }
 
         return SafeArea(

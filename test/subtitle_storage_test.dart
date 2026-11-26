@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:asmr_one/core/api/api_client.dart';
 import 'package:asmr_one/core/models/subtitle_matcher.dart';
 import 'package:asmr_one/core/models/track.dart';
@@ -16,6 +18,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -315,6 +318,147 @@ void main() {
       library.dispose();
       auth.dispose();
       settings.dispose();
+    },
+  );
+
+  test(
+    'clearAutoSubtitleCache rolls back transaction on offset write failure, preserving original matchedSubtitle and succeeding on retry',
+    () async {
+      SharedPreferences.setMockInitialValues({'ui.locale': 'zh-CN'});
+      final tempDir = await Directory.systemTemp.createTemp(
+        'subtitle_rollback_test_',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      final dbPath = p.join(tempDir.path, 'library.db');
+
+      const autoSubNode = TrackNode(
+        type: 'text',
+        title: '02 Auto.lrc',
+        hash: '10/sub_auto',
+        mediaDownloadUrl: 'https://example.invalid/auto.lrc',
+      );
+      const track2 = TrackNode(
+        type: 'audio',
+        title: '02 Auto.mp3',
+        hash: '10/a2',
+        mediaStreamUrl: 'https://example.invalid/a2.mp3',
+      );
+      final work = Work.fromJson({'id': 10, 'title': 'Rollback Work'});
+      final settings = SettingsState(await AppPrefs.load());
+      addTearDown(settings.dispose);
+
+      // 1. Seed legacy matchedSubtitle with non-zero calibrated offset + another cached record.
+      var db = await LibraryDb.open(path: dbPath);
+      final track2Key = '10:10/a2';
+      await db.writeDocument('matchedSubtitle:$track2Key', {
+        'attachmentId': '10/sub_auto',
+        'name': '02 Auto.lrc',
+        'source': '[00:01.00]Auto Subtitle Body',
+        'language': 'zh-hans',
+        'ruleVersion': SubtitleMatcher.ruleVersion,
+        'offsetMs': -750,
+      });
+      await db.writeDocument('matchedSubtitle:10:10/a3', {
+        'attachmentId': '10/sub_zero',
+        'name': '03 Zero.lrc',
+        'source': '[00:01.00]Zero Offset Body',
+        'language': 'zh-hans',
+        'ruleVersion': SubtitleMatcher.ruleVersion,
+        'offsetMs': 0,
+      });
+      await db.close();
+
+      // 2. Install SQLite trigger that aborts any write to subtitleOffset:*.
+      var raw = await openDatabase(dbPath);
+      await raw.execute('''
+        CREATE TRIGGER fail_offset_write
+        BEFORE INSERT ON documents
+        WHEN NEW.key LIKE 'subtitleOffset:%'
+        BEGIN
+          SELECT RAISE(ABORT, 'disk full');
+        END
+      ''');
+      await raw.close();
+
+      // 3. Attempting to clear must throw and roll back, leaving matchedSubtitle intact.
+      db = await LibraryDb.open(path: dbPath);
+      final library = LibraryState(db);
+      await library.refreshAutoSubtitleCacheStats();
+      expect(library.autoSubtitleCacheStats.count, 2);
+
+      await expectLater(
+        library.clearAutoSubtitleCache(),
+        throwsA(isA<DatabaseException>()),
+      );
+
+      final preserved = await db.readDocument('matchedSubtitle:$track2Key');
+      expect(preserved, isA<Map>());
+      expect((preserved as Map)['offsetMs'], -750);
+      expect(preserved['source'], '[00:01.00]Auto Subtitle Body');
+      expect(await db.readDocument('matchedSubtitle:10:10/a3'), isNotNull);
+      expect(await db.readDocument('subtitleOffset:$track2Key'), isNull);
+      expect(library.autoSubtitleCacheStats.count, 2);
+      library.dispose();
+      await db.close();
+
+      // 4. Drop trigger and also inject a malformed JSON matchedSubtitle row to confirm
+      //    FormatException still skips safely while valid migration succeeds.
+      raw = await openDatabase(dbPath);
+      try {
+        await raw.execute('DROP TRIGGER fail_offset_write');
+        await raw.insert('documents', {
+          'key': 'matchedSubtitle:10:10/corrupt',
+          'value': '{not-valid-json',
+        });
+      } finally {
+        await raw.close();
+      }
+
+      db = await LibraryDb.open(path: dbPath);
+      addTearDown(db.close);
+      final recoveredLibrary = LibraryState(db);
+      addTearDown(recoveredLibrary.dispose);
+      final removed = await recoveredLibrary.clearAutoSubtitleCache();
+      expect(removed, 3);
+      expect(await db.readDocument('matchedSubtitle:$track2Key'), isNull);
+      expect(await db.readDocument('subtitleOffset:$track2Key'), {
+        '10/sub_auto': -750,
+      });
+
+      // 5. Re-matching the same attachment restores the migrated -750ms offset.
+      final player = PlayerState(
+        settings: settings,
+        library: recoveredLibrary,
+        audioPlayer: TestAudio(),
+      );
+      addTearDown(player.dispose);
+      final flat = const [track2, autoSubNode]
+          .expand((n) => n.flatten())
+          .toList();
+      await player.playWork(work, flat, startIndex: 0);
+      final api = _SubtitleStorageApi(
+        {
+          10: const [track2, autoSubNode],
+        },
+        {'02 Auto.lrc': '[00:01.00]Auto Subtitle Body'},
+      );
+      final notes = ListeningNotes(
+        recoveredLibrary,
+        player,
+        settings: settings,
+        api: api,
+        checkNetwork: () async => [ConnectivityResult.wifi],
+      );
+      addTearDown(notes.dispose);
+
+      await notes.reload();
+      expect(notes.subtitleStatus, SubtitleStatus.loaded);
+      expect(notes.subtitleSource, SubtitleSource.auto);
+      expect(notes.offsetMs, -750);
     },
   );
 }

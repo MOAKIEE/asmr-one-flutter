@@ -605,37 +605,48 @@ class LibraryDb {
     for (final row in rows) {
       final key = row['key'] as String;
       final trackKey = key.substring('matchedSubtitle:'.length);
+      final raw = row['value'];
+      if (raw is! String) continue;
+      Object? decoded;
       try {
-        final decoded = jsonDecode(row['value'] as String);
-        if (decoded is! Map) continue;
-        final attachmentId = decoded['attachmentId'] as String?;
-        final offsetMs = (decoded['offsetMs'] as num?)?.toInt() ?? 0;
-        if (attachmentId == null || attachmentId.isEmpty || offsetMs == 0) {
-          continue;
-        }
-        final offsetKey = 'subtitleOffset:$trackKey';
-        final existingRows = await txn.query(
-          'documents',
-          columns: ['value'],
-          where: 'key = ?',
-          whereArgs: [offsetKey],
-          limit: 1,
-        );
-        final offsets = <String, int>{};
-        if (existingRows.isNotEmpty) {
-          final existingDecoded = jsonDecode(
-            existingRows.single['value'] as String,
-          );
+        decoded = jsonDecode(raw);
+      } on FormatException {
+        continue;
+      }
+      if (decoded is! Map) continue;
+      final attachmentId = decoded['attachmentId'] as String?;
+      final offsetMs = (decoded['offsetMs'] as num?)?.toInt() ?? 0;
+      if (attachmentId == null || attachmentId.isEmpty || offsetMs == 0) {
+        continue;
+      }
+      final offsetKey = 'subtitleOffset:$trackKey';
+      final existingRows = await txn.query(
+        'documents',
+        columns: ['value'],
+        where: 'key = ?',
+        whereArgs: [offsetKey],
+        limit: 1,
+      );
+      final offsets = <String, int>{};
+      if (existingRows.isNotEmpty) {
+        final existingRaw = existingRows.single['value'];
+        if (existingRaw is String) {
+          Object? existingDecoded;
+          try {
+            existingDecoded = jsonDecode(existingRaw);
+          } on FormatException {
+            existingDecoded = null;
+          }
           if (existingDecoded is Map) {
             existingDecoded.forEach((k, v) {
               if (k is String && v is num) offsets[k] = v.toInt();
             });
           }
         }
-        // 已存在的独立偏移优先，仅迁出尚未落盘的旧记录偏移。
-        offsets.putIfAbsent(attachmentId, () => offsetMs);
-        await _writeDocument(txn, offsetKey, offsets);
-      } catch (_) {}
+      }
+      // 已存在的独立偏移优先，仅迁出尚未落盘的旧记录偏移。
+      offsets.putIfAbsent(attachmentId, () => offsetMs);
+      await _writeDocument(txn, offsetKey, offsets);
     }
 
     return txn.delete('documents', where: "key LIKE 'matchedSubtitle:%'");
