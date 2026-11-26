@@ -173,7 +173,6 @@ class SettingsScreen extends StatelessWidget {
                 SwitchListTile(
                   secondary: const Icon(Icons.cached_rounded),
                   title: Text(l('player.streamCache')),
-                  subtitle: Text(l('player.streamCacheHint')),
                   value: settings.streamCacheEnabled,
                   onChanged: (v) => settings.streamCacheEnabled = v,
                 ),
@@ -207,42 +206,27 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 const Divider(indent: 56, endIndent: 16),
                 ListTile(
-                  leading: const Icon(Icons.image_outlined),
-                  title: Text(l('settings.clearCache')),
-                  onTap: () async {
-                    await DefaultCacheManager().emptyCache();
-                    if (context.mounted) {
-                      _toast(context, l('settings.cacheCleared'));
-                    }
-                  },
-                ),
-                const Divider(indent: 56, endIndent: 16),
-                ListTile(
-                  leading: const Icon(Icons.audiotrack_outlined),
-                  title: Text(l('settings.audioCache')),
-                  subtitle: Text(l('settings.audioCacheHint')),
-                  trailing: Text(
-                    Fmt.size(audioCache?.cachedBytes ?? 0),
-                    style: theme.textTheme.labelMedium,
+                  leading: const Icon(Icons.cleaning_services_outlined),
+                  title: Text(l('settings.cacheManager')),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if ((audioCache?.cachedBytes ?? 0) +
+                              subtitleStats.textBytes >
+                          0) ...[
+                        Text(
+                          Fmt.size(
+                            (audioCache?.cachedBytes ?? 0) +
+                                subtitleStats.textBytes,
+                          ),
+                          style: theme.textTheme.labelMedium,
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      const Icon(Icons.chevron_right_rounded),
+                    ],
                   ),
-                  onTap: () async {
-                    await audioCache?.clearAll();
-                    if (context.mounted) {
-                      _toast(context, l('settings.audioCacheCleared'));
-                    }
-                  },
-                ),
-                const Divider(indent: 56, endIndent: 16),
-                ListTile(
-                  leading: const Icon(Icons.subtitles_outlined),
-                  title: Text(l('settings.autoSubtitleCache')),
-                  subtitle: Text(l('settings.autoSubtitleCacheHint')),
-                  trailing: Text(
-                    Fmt.size(subtitleStats.textBytes),
-                    style: theme.textTheme.labelMedium,
-                  ),
-                  onTap: () =>
-                      _confirmClearAutoSubtitles(context, library, subtitleStats),
+                  onTap: () => _openCacheManagerSheet(context),
                 ),
                 const Divider(indent: 56, endIndent: 16),
                 ListTile(
@@ -720,43 +704,123 @@ class SettingsScreen extends StatelessWidget {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _confirmClearAutoSubtitles(
-    BuildContext context,
-    LibraryState library,
-    AutoSubtitleCacheStats stats,
-  ) async {
-    final l = L10n.of(context);
-    if (stats.count == 0) {
-      _toast(context, l('settings.autoSubtitleCacheEmpty'));
-      return;
-    }
-    final ok = await showDialog<bool>(
+  Future<void> _openCacheManagerSheet(BuildContext context) async {
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(l('settings.autoSubtitleCache')),
-        content: Text(
-          l('settings.autoSubtitleCacheConfirm', {
-            'n': stats.count,
-            'size': Fmt.size(stats.textBytes),
-          }),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(l('common.cancel')),
+      isScrollControlled: true,
+      useSafeArea: true,
+      constraints: const BoxConstraints(maxWidth: 560),
+      builder: (sheetContext) {
+        final l = L10n.of(sheetContext);
+        final theme = Theme.of(sheetContext);
+        final scheme = theme.colorScheme;
+        final library = sheetContext.watch<LibraryState>();
+        final subtitleStats = _subtitleStatsOf(library);
+        final audioCache = _watchAudioCacheOrNull(sheetContext);
+        final audioBytes = audioCache?.cachedBytes ?? 0;
+
+        Future<void> clearImage() async {
+          await DefaultCacheManager().emptyCache();
+          if (context.mounted) _toast(context, l('settings.cacheCleared'));
+        }
+
+        Future<void> clearAudio() async {
+          await audioCache?.clearAll();
+          if (context.mounted) _toast(context, l('settings.audioCacheCleared'));
+        }
+
+        Future<void> clearSubtitles() async {
+          await library.clearAutoSubtitleCache();
+          if (context.mounted) {
+            _toast(context, l('settings.autoSubtitleCacheCleared'));
+          }
+        }
+
+        Future<void> clearAll() async {
+          await DefaultCacheManager().emptyCache();
+          await audioCache?.clearAll();
+          if (subtitleStats.count > 0) {
+            await library.clearAutoSubtitleCache();
+          }
+          if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+          if (context.mounted) _toast(context, l('settings.cacheCleared'));
+        }
+
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  l('settings.cacheManager'),
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                AppGroupCard(
+                  radius: 16,
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.image_outlined),
+                        title: Text(l('settings.imageCache')),
+                        subtitle: Text(l('settings.imageCacheShort')),
+                        trailing: TextButton(
+                          onPressed: clearImage,
+                          child: Text(l('settings.clearAction')),
+                        ),
+                      ),
+                      const Divider(indent: 56, endIndent: 16),
+                      ListTile(
+                        leading: const Icon(Icons.audiotrack_outlined),
+                        title: Text(l('settings.audioCache')),
+                        subtitle: Text(Fmt.size(audioBytes)),
+                        trailing: TextButton(
+                          onPressed: audioBytes > 0 ? clearAudio : null,
+                          child: Text(l('settings.clearAction')),
+                        ),
+                      ),
+                      const Divider(indent: 56, endIndent: 16),
+                      ListTile(
+                        leading: const Icon(Icons.subtitles_outlined),
+                        title: Text(l('settings.autoSubtitleCache')),
+                        subtitle: Text(
+                          subtitleStats.count > 0
+                              ? l('settings.autoSubtitleCacheSummary', {
+                                  'n': subtitleStats.count,
+                                  'size': Fmt.size(subtitleStats.textBytes),
+                                })
+                              : Fmt.size(0),
+                        ),
+                        trailing: TextButton(
+                          onPressed: subtitleStats.count > 0
+                              ? clearSubtitles
+                              : null,
+                          child: Text(l('settings.clearAction')),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  l('settings.cacheScopeNote'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.tonal(
+                  onPressed: clearAll,
+                  child: Text(l('settings.clearAllCache')),
+                ),
+              ],
+            ),
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(l('common.confirm')),
-          ),
-        ],
-      ),
+        );
+      },
     );
-    if (ok != true || !context.mounted) return;
-    await library.clearAutoSubtitleCache();
-    if (context.mounted) {
-      _toast(context, l('settings.autoSubtitleCacheCleared'));
-    }
   }
 
   AutoSubtitleCacheStats _subtitleStatsOf(LibraryState library) {

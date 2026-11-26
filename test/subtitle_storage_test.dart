@@ -209,7 +209,7 @@ void main() {
   );
 
   testWidgets(
-    'SettingsScreen displays auto subtitle cache size, explains scope in dialog, and clears only auto cache',
+    'SettingsScreen opens unified cache manager sheet and clears auto subtitle cache while keeping manual subtitles and offsets',
     (tester) async {
       SharedPreferences.setMockInitialValues({'ui.locale': 'zh-CN'});
       final db = await tester.runAsync(
@@ -268,19 +268,28 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.scrollUntilVisible(
-        find.text('自动匹配字幕缓存'),
+        find.text('缓存管理'),
         250,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
-      expect(find.text('自动匹配字幕缓存'), findsOneWidget);
+      expect(find.text('缓存管理'), findsOneWidget);
 
-      await tester.tap(find.text('自动匹配字幕缓存'));
+      await tester.tap(find.text('缓存管理'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('字幕正文'), findsWidgets);
-      expect(find.textContaining('时间偏移'), findsWidgets);
+      expect(find.text('图片缓存'), findsOneWidget);
+      expect(find.text('在线播放缓存'), findsWidgets);
+      expect(find.text('自动匹配字幕'), findsOneWidget);
+      expect(find.textContaining('时间偏移'), findsOneWidget);
 
-      await tester.tap(find.text('确定'));
+      // Tap the "清除" button on the 自动匹配字幕 row (3rd TextButton in sheet).
+      final subtitleTile = find.ancestor(
+        of: find.text('自动匹配字幕'),
+        matching: find.byType(ListTile),
+      );
+      await tester.tap(
+        find.descendant(of: subtitleTile, matching: find.byType(TextButton)),
+      );
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );
