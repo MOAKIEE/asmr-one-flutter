@@ -59,7 +59,7 @@ class PlayerState extends ChangeNotifier {
     ja.AudioPlayer? audioPlayer,
     ApiClient? api,
     StreamAudioCache? audioCache,
-    String Function()? accountScope,
+    String? Function()? accountScope,
     this.readSession,
     this.writeSession,
     DateTime Function()? now,
@@ -80,8 +80,11 @@ class PlayerState extends ChangeNotifier {
   final LibraryState _library;
   final ApiClient _api;
   final StreamAudioCache? _audioCache;
-  final String Function()? _accountScope;
-  final Set<String> _activeCacheKeys = {};
+  final String? Function()? _accountScope;
+  String? _activeRouteGroupId;
+  Map<int, String> _queueCacheKeys = const {};
+  String? _activePlayingCacheKey;
+  String? _appliedCacheScope;
 
   final ja.AudioPlayer _player;
   final DateTime Function() _now;
@@ -360,6 +363,7 @@ class PlayerState extends ChangeNotifier {
       _player.currentIndexStream.listen((index) {
         if (index == null || _singleSource || _changingSources) return;
         _currentIndex = index;
+        _setActivePlayingCacheKey(_queueCacheKeys[index]);
         clearAbLoop();
         _onItemChanged();
       }),
@@ -444,23 +448,31 @@ class PlayerState extends ChangeNotifier {
       _shuffleSingleQueue(index);
     }
     _currentIndex = index;
+    final nextRouteGroup = _audioCache?.createRouteGroup();
     try {
       if (resetPlatform) {
         await _player.stop();
-        if (version != _sourceVersion) return false;
+        if (version != _sourceVersion) {
+          _audioCache?.releaseRouteGroup(nextRouteGroup);
+          return false;
+        }
       }
       await _player.setLoopMode(
         _stopAfterTrack || (_singleSource && _loopMode == ja.LoopMode.all)
             ? ja.LoopMode.off
             : _loopMode,
       );
-      if (version != _sourceVersion) return false;
+      if (version != _sourceVersion) {
+        _audioCache?.releaseRouteGroup(nextRouteGroup);
+        return false;
+      }
       final ids = _mediaIds(items);
       final token = _api.token ?? '';
+      final cacheScope = _currentAccountScope();
       final targetIndices = _singleSource
           ? [index]
           : List.generate(items.length, (i) => i);
-      final nextActiveKeys = <String>{};
+      final nextQueueCacheKeys = <int, String>{};
       final sources = <ja.UriAudioSource>[];
       var hasApiMedia = false;
       for (final i in targetIndices) {
@@ -470,12 +482,17 @@ class PlayerState extends ChangeNotifier {
           if (parsed != null && _isApiMedia(parsed)) hasApiMedia = true;
         }
         sources.add(
-          await _resolveSource(item, ids[i], token, nextActiveKeys),
+          await _resolveSource(
+            item,
+            ids[i],
+            token,
+            cacheScope: cacheScope,
+            routeGroup: nextRouteGroup,
+            onCacheKey: (keyId) => nextQueueCacheKeys[i] = keyId,
+          ),
         );
         if (version != _sourceVersion) {
-          for (final keyId in nextActiveKeys) {
-            _audioCache?.releaseActive(keyId);
-          }
+          _audioCache?.releaseRouteGroup(nextRouteGroup);
           return false;
         }
       }
@@ -487,14 +504,18 @@ class PlayerState extends ChangeNotifier {
         initialPosition: position,
       );
       if (version != _sourceVersion) {
-        for (final keyId in nextActiveKeys) {
-          _audioCache?.releaseActive(keyId);
-        }
+        _audioCache?.releaseRouteGroup(nextRouteGroup);
         return false;
       }
-      _replaceActiveCacheKeys(nextActiveKeys);
+      final prevRouteGroup = _activeRouteGroupId;
+      _activeRouteGroupId = nextRouteGroup;
+      _queueCacheKeys = nextQueueCacheKeys;
+      _setActivePlayingCacheKey(_queueCacheKeys[index]);
+      _audioCache?.releaseRouteGroup(prevRouteGroup);
       _appliedMediaToken = nextMediaToken;
+      _appliedCacheScope = cacheScope;
     } catch (_) {
+      _audioCache?.releaseRouteGroup(nextRouteGroup);
       if (version == _sourceVersion) rethrow;
       return false;
     } finally {
@@ -781,35 +802,35 @@ class PlayerState extends ChangeNotifier {
     return unique;
   }
 
-  String _currentAccountScope() =>
-      _accountScope?.call() ?? (_api.hasToken ? 'auth:session' : 'guest');
+  String? _currentAccountScope() =>
+      _accountScope != null ? _accountScope() : (_api.hasToken ? null : 'guest');
 
-  void _replaceActiveCacheKeys(Set<String> nextKeys) {
+  void _setActivePlayingCacheKey(String? nextKey) {
     final cache = _audioCache;
-    if (cache == null) return;
-    for (final oldKey in _activeCacheKeys) {
-      cache.releaseActive(oldKey);
-    }
-    _activeCacheKeys
-      ..clear()
-      ..addAll(nextKeys);
+    if (cache == null || _activePlayingCacheKey == nextKey) return;
+    final prev = _activePlayingCacheKey;
+    _activePlayingCacheKey = nextKey;
+    if (nextKey != null) cache.markActive(nextKey);
+    if (prev != null) cache.releaseActive(prev);
   }
 
   void _releaseAllActiveCacheKeys() {
-    final cache = _audioCache;
-    if (cache == null || _activeCacheKeys.isEmpty) return;
-    for (final oldKey in _activeCacheKeys) {
-      cache.releaseActive(oldKey);
-    }
-    _activeCacheKeys.clear();
+    _setActivePlayingCacheKey(null);
+    final prevGroup = _activeRouteGroupId;
+    _activeRouteGroupId = null;
+    _queueCacheKeys = const {};
+    _appliedCacheScope = null;
+    _audioCache?.releaseRouteGroup(prevGroup);
   }
 
   Future<ja.UriAudioSource> _resolveSource(
     PlayItem item,
     String mediaId,
-    String token,
-    Set<String> nextActiveKeys,
-  ) async {
+    String token, {
+    required String? cacheScope,
+    required String? routeGroup,
+    required void Function(String keyId) onCacheKey,
+  }) async {
     Uri uri;
     if (item.isLocal) {
       uri = Uri.file(item.localPath!);
@@ -822,12 +843,16 @@ class PlayerState extends ChangeNotifier {
       }
       uri = remoteUri;
       final cache = _audioCache;
-      if (_settings.streamCacheEnabled && cache != null && item.url.isNotEmpty) {
+      // 账号身份尚未确认（cacheScope == null）时跳过账号缓存读写，避免跨账号碰撞。
+      if (_settings.streamCacheEnabled &&
+          cache != null &&
+          cacheScope != null &&
+          item.url.isNotEmpty) {
         final trackId = (item.hash != null && item.hash!.isNotEmpty)
             ? item.hash!
             : '${item.folderLabel}/${item.title}';
         final key = AudioCacheKey(
-          accountScope: _currentAccountScope(),
+          accountScope: cacheScope,
           workId: item.workId,
           trackId: trackId,
           lowQuality: item.lowQuality,
@@ -836,12 +861,11 @@ class PlayerState extends ChangeNotifier {
           key: key,
           remoteUri: remoteUri,
           headers: const {'Referer': '${ApiClient.siteUrl}/'},
+          routeGroup: routeGroup,
         );
         if (resolved != null) {
           uri = resolved;
-          if (nextActiveKeys.add(key.id)) {
-            cache.markActive(key.id);
-          }
+          onCacheKey(key.id);
         }
       }
     }
@@ -1026,14 +1050,19 @@ class PlayerState extends ChangeNotifier {
 
   void clearSleepTimer() => setSleepTimer(0);
 
-  /// 账号令牌变更后撤下旧媒体源，并用当前令牌重新配置音频引擎。
+  /// 账号令牌或缓存账号身份变更后撤下旧媒体源，并用当前身份重新配置音频引擎。
   Future<void> refreshTokens() async {
     final token = _api.token ?? '';
+    final scope = _currentAccountScope();
     final item = currentItem;
-    if (_disposed ||
-        item == null ||
-        _appliedMediaToken == null ||
-        _appliedMediaToken == token) {
+    if (_disposed || item == null) return;
+    final tokenChanged =
+        _appliedMediaToken != null && _appliedMediaToken != token;
+    final scopeChanged =
+        _settings.streamCacheEnabled &&
+        _audioCache != null &&
+        _appliedCacheScope != scope;
+    if (!tokenChanged && !scopeChanged) {
       return;
     }
     final uri = item.isLocal ? null : Uri.tryParse(item.url);

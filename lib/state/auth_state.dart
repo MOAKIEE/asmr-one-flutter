@@ -49,10 +49,12 @@ class AuthState extends ChangeNotifier {
   }
 
   /// 用于流媒体缓存隔离的稳定账号范围（不含明文令牌，令牌刷新后不变）。
-  String get cacheAccountScope => StreamAudioCache.accountScopeFor(
+  /// 令牌存在但账号身份尚未确认且无已持久化范围时返回 `null`，由播放器跳过账号缓存读写。
+  String? get cacheAccountScope => StreamAudioCache.accountScopeFor(
     hasToken: hasToken,
     userId: _user.id,
     userName: _user.name,
+    persistedScope: _prefs.accountScope,
   );
   bool get authEnabled => _authEnabled;
   bool get regEnabled => _regEnabled;
@@ -92,6 +94,7 @@ class AuthState extends ChangeNotifier {
   /// 网络异常时不清除 token（避免离线打开 App 就被登出）。
   Future<void> bootstrap() async {
     final version = _sessionVersion;
+    final prevScope = cacheAccountScope;
     Future<void>? tokenRefresh;
     try {
       final session = await _api.fetchSession();
@@ -100,16 +103,24 @@ class AuthState extends ChangeNotifier {
       _regEnabled = session.regEnabled;
       if (session.user.loggedIn) {
         _user = session.user;
+        _prefs.accountScope = StreamAudioCache.accountScopeFor(
+          hasToken: hasToken,
+          userId: _user.id,
+          userName: _user.name,
+        );
       } else if (!session.authEnabled && hasToken) {
         // 服务端关闭了登录，本地令牌已无意义。
         _user = AppUser.anonymous;
+        _prefs.accountScope = null;
       } else {
         _user = AppUser.anonymous;
+        if (!hasToken) _prefs.accountScope = null;
       }
     } on ApiException catch (e) {
       if (version != _sessionVersion) return;
       if (e.isAuthError) {
         _user = AppUser.anonymous;
+        _prefs.accountScope = null;
         tokenRefresh = _setToken(null);
       }
       _lastError = e.message;
@@ -118,6 +129,9 @@ class AuthState extends ChangeNotifier {
       // 静默失败：保持本地状态，离线可用。
     }
     notifyListeners();
+    if (tokenRefresh == null && prevScope != cacheAccountScope) {
+      tokenRefresh = onTokenChanged?.call();
+    }
     await tokenRefresh;
     if (loggedIn) _fireAndForget(_loadCloudData());
   }
@@ -136,6 +150,11 @@ class AuthState extends ChangeNotifier {
       // 校验期间其他请求仍属于原账号。
       final sessionVersion = ++_sessionVersion;
       _user = session.user;
+      _prefs.accountScope = StreamAudioCache.accountScopeFor(
+        hasToken: true,
+        userId: _user.id,
+        userName: _user.name,
+      );
       _playlists = const [];
       _playlistsLoaded = false;
       _serverTags = null;
@@ -198,6 +217,7 @@ class AuthState extends ChangeNotifier {
   Future<void> logout() async {
     _sessionVersion++;
     _user = AppUser.anonymous;
+    _prefs.accountScope = null;
     _playlists = const [];
     _playlistsLoaded = false;
     _serverTags = null;

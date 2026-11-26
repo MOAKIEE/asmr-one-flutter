@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:asmr_one/core/api/api_client.dart';
 import 'package:asmr_one/core/models/track.dart';
 import 'package:asmr_one/core/models/work.dart';
 import 'package:asmr_one/core/storage/app_prefs.dart';
 import 'package:asmr_one/core/storage/stream_audio_cache.dart';
+import 'package:asmr_one/state/auth_state.dart';
 import 'package:asmr_one/state/player_state.dart';
 import 'package:asmr_one/state/settings_state.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +15,7 @@ import 'package:just_audio/just_audio.dart' as ja;
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'api_client_test.dart' show TestAdapter, jsonResponse;
 import 'player_state_test.dart' show TestAudio, TestLibrary;
 
 /// 支持 Range 请求并记录传输字节数的本地模拟音频服务器。
@@ -236,11 +240,12 @@ void main() {
         userName: 'alice',
       );
       final guestScope = StreamAudioCache.accountScopeFor(hasToken: false);
+      expect(scopeBeforeRefresh, isNotNull);
       expect(scopeBeforeRefresh, scopeAfterRefresh);
       expect(scopeBeforeRefresh, isNot(guestScope));
 
       final highKey = AudioCacheKey(
-        accountScope: scopeBeforeRefresh,
+        accountScope: scopeBeforeRefresh!,
         workId: 1,
         trackId: '1/0',
         lowQuality: false,
@@ -252,7 +257,7 @@ void main() {
         lowQuality: true,
       );
       final guestKey = AudioCacheKey(
-        accountScope: guestScope,
+        accountScope: guestScope!,
         workId: 1,
         trackId: '1/0',
         lowQuality: false,
@@ -385,6 +390,437 @@ void main() {
       final fallbackUri =
           (fallbackAudio.sources.single as ja.UriAudioSource).uri;
       expect(fallbackUri.toString(), 'https://cdn.example/50_1.mp3');
+    },
+  );
+
+  test(
+    'Android manifest enables cleartext network security config strictly for 127.0.0.1',
+    () {
+      final manifest = File(
+        'android/app/src/main/AndroidManifest.xml',
+      ).readAsStringSync();
+      final config = File(
+        'android/app/src/main/res/xml/network_security_config.xml',
+      ).readAsStringSync();
+
+      expect(
+        manifest,
+        contains('android:networkSecurityConfig="@xml/network_security_config"'),
+      );
+      expect(config, contains('cleartextTrafficPermitted="false"'));
+      expect(config, contains('cleartextTrafficPermitted="true"'));
+      expect(config, contains('<domain includeSubdomains="false">127.0.0.1</domain>'));
+    },
+  );
+
+  test(
+    'cold start skips cache when identity is pending and isolates restored queue per persisted account across token refresh',
+    () async {
+      final payload = Uint8List.fromList(List.generate(8192, (i) => i & 0xff));
+      final server = _MockAudioServer(payload);
+      await server.start();
+      addTearDown(server.close);
+
+      final dir = await Directory.systemTemp.createTemp('asmr-cold-scope-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final cache = StreamAudioCache(directoryProvider: () async => dir);
+      addTearDown(cache.dispose);
+
+      Map<String, Object?> savedSession() => {
+        'playerSession': {
+          'index': 0,
+          'position': 0,
+          'shuffle': false,
+          'loop': 0,
+        },
+        'playerQueue': [
+          {
+            'workId': 77,
+            'workTitle': 'Cold Work',
+            'title': '01.mp3',
+            'hash': '77/0',
+            'url': server.uri.toString(),
+            'coverUrl': '',
+          },
+        ],
+      };
+
+      // 1. Legacy token without persisted accountScope -> pending identity -> skips cache (direct remote URL).
+      SharedPreferences.setMockInitialValues({
+        'auth.token': 'legacy-token',
+        'player.streamCache': true,
+      });
+      final legacyPrefs = await AppPrefs.load();
+      final legacySettings = SettingsState(legacyPrefs);
+      final legacyAuth = AuthState(legacyPrefs);
+      expect(legacyAuth.cacheAccountScope, isNull);
+      final legacyAudio = TestAudio();
+      final legacyPlayer = PlayerState(
+        settings: legacySettings,
+        library: TestLibrary(),
+        audioPlayer: legacyAudio,
+        audioCache: cache,
+        accountScope: () => legacyAuth.cacheAccountScope,
+        readSession: (_) async => savedSession(),
+      );
+      await legacyPlayer.restoreSession();
+      expect(
+        (legacyAudio.sources.single as ja.UriAudioSource).uri,
+        server.uri,
+      );
+      legacyPlayer.dispose();
+      legacyAuth.dispose();
+      legacySettings.dispose();
+
+      // 2. Account A logs in, caches track 77/0, then cold-starts with refreshed token -> hits Account A's file.
+      final api = ApiClient(
+        adapter: TestAdapter((request) {
+          if (request.method == 'POST' && request.uri.path == '/api/auth/me') {
+            final name = (request.data as Map)['name'] as String;
+            return jsonResponse({'token': 'tok-$name'});
+          }
+          final authHeader = request.headers['Authorization'] as String? ?? '';
+          if (authHeader.contains('tok-alice')) {
+            return jsonResponse({
+              'user': {'loggedIn': true, 'id': 'u-alice', 'name': 'alice'},
+            });
+          }
+          return jsonResponse({
+            'user': {'loggedIn': true, 'id': 'u-bob', 'name': 'bob'},
+          });
+        }),
+      );
+
+      SharedPreferences.setMockInitialValues({'player.streamCache': true});
+      final prefsA = await AppPrefs.load();
+      final authA = AuthState(prefsA, api: api);
+      expect(await authA.login('alice', 'pass123'), isTrue);
+      expect(prefsA.accountScope, 'uid:u-alice');
+      final keyA = const AudioCacheKey(
+        accountScope: 'uid:u-alice',
+        workId: 77,
+        trackId: '77/0',
+        lowQuality: false,
+      );
+      final proxyA = await cache.resolvePlayableUri(
+        key: keyA,
+        remoteUri: server.uri,
+      );
+      await _readAll(proxyA!);
+      authA.dispose();
+
+      // Cold start Account A with a refreshed token (before bootstrap runs): still hits Account A's cache!
+      SharedPreferences.setMockInitialValues({
+        'auth.token': 'refreshed-tok-alice',
+        'auth.accountScope': 'uid:u-alice',
+        'player.streamCache': true,
+      });
+      final coldPrefsA = await AppPrefs.load();
+      final coldSettingsA = SettingsState(coldPrefsA);
+      final coldAuthA = AuthState(coldPrefsA);
+      final coldAudioA = TestAudio();
+      final coldPlayerA = PlayerState(
+        settings: coldSettingsA,
+        library: TestLibrary(),
+        audioPlayer: coldAudioA,
+        audioCache: cache,
+        accountScope: () => coldAuthA.cacheAccountScope,
+        readSession: (_) async => savedSession(),
+      );
+      await coldPlayerA.restoreSession();
+      expect(
+        (coldAudioA.sources.single as ja.UriAudioSource).uri.scheme,
+        'file',
+      );
+      coldPlayerA.dispose();
+      coldAuthA.dispose();
+      coldSettingsA.dispose();
+
+      // 3. Cold start Account B -> must NOT hit Account A's file (gets proxy for uid:u-bob).
+      SharedPreferences.setMockInitialValues({
+        'auth.token': 'tok-bob',
+        'auth.accountScope': 'uid:u-bob',
+        'player.streamCache': true,
+      });
+      final coldPrefsB = await AppPrefs.load();
+      final coldSettingsB = SettingsState(coldPrefsB);
+      final coldAuthB = AuthState(coldPrefsB);
+      final coldAudioB = TestAudio();
+      final coldPlayerB = PlayerState(
+        settings: coldSettingsB,
+        library: TestLibrary(),
+        audioPlayer: coldAudioB,
+        audioCache: cache,
+        accountScope: () => coldAuthB.cacheAccountScope,
+        readSession: (_) async => savedSession(),
+      );
+      await coldPlayerB.restoreSession();
+      final uriB = (coldAudioB.sources.single as ja.UriAudioSource).uri;
+      expect(uriB.scheme, 'http');
+      expect(uriB.host, '127.0.0.1');
+      coldPlayerB.dispose();
+      coldAuthB.dispose();
+      coldSettingsB.dispose();
+    },
+  );
+
+  test(
+    '257-track queue keeps first track route alive across jumps and releases old routes when queue is replaced',
+    () async {
+      final payload = Uint8List.fromList(List.generate(2048, (i) => i & 0xff));
+      final server = _MockAudioServer(payload);
+      await server.start();
+      addTearDown(server.close);
+
+      final dir = await Directory.systemTemp.createTemp('asmr-long-queue-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final cache = StreamAudioCache(directoryProvider: () async => dir);
+      addTearDown(cache.dispose);
+
+      SharedPreferences.setMockInitialValues({
+        'player.streamCache': true,
+        'player.autoPlayNext': true,
+      });
+      final settings = SettingsState(await AppPrefs.load());
+      final audio = TestAudio();
+      final player = PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: audio,
+        audioCache: cache,
+        accountScope: () => 'guest',
+      );
+      addTearDown(() {
+        player.dispose();
+        settings.dispose();
+      });
+
+      final tracks = [
+        for (var i = 0; i < 257; i++)
+          TrackNode.fromJson({
+            'type': 'audio',
+            'hash': '900/$i',
+            'title': 'Track $i.mp3',
+            'mediaStreamUrl': server.uri.toString(),
+          }).flatten().single,
+      ];
+      await player.playWork(Work.fromJson({'id': 900, 'title': 'Long'}), tracks);
+      final sources = audio.sources.cast<ja.UriAudioSource>();
+      expect(sources, hasLength(257));
+      expect(cache.activeRouteCount, 257);
+
+      final firstUri = sources[0].uri;
+      final lastUri = sources[256].uri;
+      // Fetch track 0, jump to track 256, return to track 0: all 3 succeed!
+      expect(await _readAll(firstUri), payload);
+      await player.seekToIndex(256);
+      expect(await _readAll(lastUri), payload);
+      await player.seekToIndex(0);
+      expect(await _readAll(firstUri), payload);
+
+      // Replace queue with a single-track work -> old 257 routes are released and return 404.
+      await player.playWork(
+        Work.fromJson({'id': 901, 'title': 'Replacement'}),
+        [
+          TrackNode.fromJson({
+            'type': 'audio',
+            'hash': '901/0',
+            'title': 'Single.mp3',
+            'mediaStreamUrl': server.uri.toString(),
+          }).flatten().single,
+        ],
+      );
+      expect(cache.activeRouteCount, 1);
+      final client = HttpClient();
+      addTearDown(() => client.close(force: true));
+      final staleReq = await client.getUrl(lastUri);
+      final staleRes = await staleReq.close();
+      expect(staleRes.statusCode, HttpStatus.notFound);
+      await staleRes.drain<void>();
+    },
+  );
+
+  test(
+    'only currently playing track is marked active so finished tracks evict under budget and failed setAudioSources leaks no refs',
+    () async {
+      final payload = Uint8List.fromList(List.filled(60 * 1024, 3));
+      final server = _MockAudioServer(payload);
+      await server.start();
+      addTearDown(server.close);
+
+      final dir = await Directory.systemTemp.createTemp('asmr-active-scope-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      var clock = DateTime(2026, 2, 1, 12, 0);
+      final cache = StreamAudioCache(
+        directoryProvider: () async => dir,
+        maxBytes: 100 * 1024, // fits 1 track (60 KB), not 2 (120 KB)
+        now: () => clock,
+      );
+      addTearDown(cache.dispose);
+
+      SharedPreferences.setMockInitialValues({
+        'player.streamCache': true,
+        'player.autoPlayNext': true,
+      });
+      final settings = SettingsState(await AppPrefs.load());
+      final audio = TestAudio();
+      final player = PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: audio,
+        audioCache: cache,
+        accountScope: () => 'guest',
+      );
+      addTearDown(() {
+        player.dispose();
+        settings.dispose();
+      });
+
+      final tracks = [
+        for (var i = 0; i < 3; i++)
+          TrackNode.fromJson({
+            'type': 'audio',
+            'hash': '800/$i',
+            'title': '0$i.mp3',
+            'mediaStreamUrl': server.uri.toString(),
+          }).flatten().single,
+      ];
+      await player.playWork(Work.fromJson({'id': 800, 'title': 'Album'}), tracks);
+      final sources = audio.sources.cast<ja.UriAudioSource>();
+
+      // Track 0 plays and caches (60 KB).
+      await _readAll(sources[0].uri);
+      const key0 = AudioCacheKey(
+        accountScope: 'guest',
+        workId: 800,
+        trackId: '800/0',
+        lowQuality: false,
+      );
+      const key1 = AudioCacheKey(
+        accountScope: 'guest',
+        workId: 800,
+        trackId: '800/1',
+        lowQuality: false,
+      );
+      expect(cache.isActive(key0.id), isTrue);
+      expect(cache.isActive(key1.id), isFalse);
+
+      // Advance to track 1 -> track 0 is released and evicted once track 1 caches!
+      clock = clock.add(const Duration(minutes: 5));
+      await player.seekToIndex(1);
+      await Future<void>.delayed(Duration.zero);
+      expect(cache.isActive(key0.id), isFalse);
+      expect(cache.isActive(key1.id), isTrue);
+      await _readAll(sources[1].uri);
+      expect(await cache.lookupComplete(key0), isNull);
+      expect(await cache.lookupComplete(key1), isNotNull);
+      expect(cache.cachedBytes, 60 * 1024);
+
+      // Simulate setAudioSources failure on a fresh player -> zero leaked active refs, manual clear deletes track 1.
+      await player.stop();
+      final failingAudio = TestAudio()..failLoading = true;
+      final failingPlayer = PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: failingAudio,
+        audioCache: cache,
+        accountScope: () => 'guest',
+      );
+      addTearDown(failingPlayer.dispose);
+      final res = await failingPlayer.playWork(
+        Work.fromJson({'id': 800, 'title': 'Album'}),
+        tracks,
+        startIndex: 1,
+      );
+      expect(res.queued, 0);
+      expect(cache.isActive(key1.id), isFalse);
+      expect(await cache.clearAll(), 0);
+      expect(cache.cachedBytes, 0);
+    },
+  );
+
+  test(
+    'concurrent requests for the same uncached track keep both streams intact and commit one reusable cache file',
+    () async {
+      final chunkA = Uint8List.fromList(List.filled(16 * 1024, 0xAA));
+      final chunkB = Uint8List.fromList(List.filled(16 * 1024, 0xBB));
+      final expected = Uint8List.fromList([...chunkA, ...chunkB]);
+
+      final releaseFirst = Completer<void>();
+      final firstHalfSent = Completer<void>();
+      final secondHalfStarted = Completer<void>();
+      var upstreamHits = 0;
+
+      final gatedServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => gatedServer.close(force: true));
+      gatedServer.listen((req) async {
+        final hit = ++upstreamHits;
+        req.response.statusCode = HttpStatus.ok;
+        req.response.headers.set(HttpHeaders.contentTypeHeader, 'audio/mpeg');
+        req.response.contentLength = expected.length;
+        req.response.add(chunkA);
+        await req.response.flush();
+        if (hit == 1) {
+          firstHalfSent.complete();
+          await releaseFirst.future;
+        } else {
+          secondHalfStarted.complete();
+        }
+        req.response.add(chunkB);
+        await req.response.close();
+      });
+
+      final dir = await Directory.systemTemp.createTemp('asmr-concurrent-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final cache = StreamAudioCache(directoryProvider: () async => dir);
+      addTearDown(cache.dispose);
+
+      const key = AudioCacheKey(
+        accountScope: 'guest',
+        workId: 555,
+        trackId: '555/0',
+        lowQuality: false,
+      );
+      final upstreamUri = Uri.parse(
+        'http://127.0.0.1:${gatedServer.port}/track.mp3',
+      );
+      final proxyUri = await cache.resolvePlayableUri(
+        key: key,
+        remoteUri: upstreamUri,
+      );
+
+      // Start request 1 (holds writer lock) and pause after first chunk.
+      final f1 = _readAll(proxyUri!);
+      await firstHalfSent.future;
+
+      // Start request 2 while request 1 is still writing; request 2 finishes FIRST (pass-through).
+      final f2 = _readAll(proxyUri);
+      await secondHalfStarted.future;
+      final bytes2 = await f2;
+      expect(bytes2, expected);
+
+      // Now let request 1 finish and commit.
+      releaseFirst.complete();
+      final bytes1 = await f1;
+      expect(bytes1, expected);
+
+      // Cache file is intact and next replay hits local file with 0 upstream requests!
+      final hitsBeforeReplay = upstreamHits;
+      final replayUri = await cache.resolvePlayableUri(
+        key: key,
+        remoteUri: upstreamUri,
+      );
+      expect(replayUri?.scheme, 'file');
+      expect(await _readAll(replayUri!), expected);
+      expect(upstreamHits, hitsBeforeReplay);
     },
   );
 }

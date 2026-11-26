@@ -95,8 +95,11 @@ class StreamAudioCache extends ChangeNotifier {
   Directory? _dir;
   HttpServer? _server;
   final Map<String, _ProxyTarget> _routes = {};
+  final Map<String, Set<String>> _routeGroups = {};
   final Map<String, int> _activeRefs = {};
+  final Set<String> _writingKeys = {};
   int _routeSeq = 0;
+  int _groupSeq = 0;
   int _cachedBytes = 0;
   bool _disposed = false;
 
@@ -107,24 +110,46 @@ class StreamAudioCache extends ChangeNotifier {
   int cacheHitBytes = 0;
 
   int get cachedBytes => _cachedBytes;
+  int get activeRouteCount => _routes.length;
 
   static Future<Directory> _defaultDirectory() async {
     final base = await getTemporaryDirectory();
     return Directory(p.join(base.path, 'stream_audio_cache'));
   }
 
-  /// 计算不含明文令牌的账号范围，令牌刷新后同一账号保持不变。
-  static String accountScopeFor({
+  /// 计算不含明文令牌的稳定账号范围，令牌刷新后同一账号保持不变。
+  /// 当已持令牌但尚未确认账号身份（且无持久化范围）时返回 `null`，避免跨账号共用缓存键。
+  static String? accountScopeFor({
     required bool hasToken,
     String? userId,
     String? userName,
+    String? persistedScope,
   }) {
     if (!hasToken) return 'guest';
     final uid = userId?.trim() ?? '';
     if (uid.isNotEmpty) return 'uid:$uid';
     final uname = userName?.trim().toLowerCase() ?? '';
     if (uname.isNotEmpty) return 'uname:$uname';
-    return 'auth:session';
+    final persisted = persistedScope?.trim() ?? '';
+    if (persisted.isNotEmpty && persisted != 'guest') return persisted;
+    return null;
+  }
+
+  /// 为当前播放队列创建一个路由分组，分组内路由在队列生命周期内不会被固定条数上限淘汰。
+  String createRouteGroup() {
+    final id = 'g${++_groupSeq}';
+    _routeGroups[id] = <String>{};
+    return id;
+  }
+
+  /// 释放指定队列分组下的全部代理路由。
+  void releaseRouteGroup(String? groupId) {
+    if (groupId == null) return;
+    final routeIds = _routeGroups.remove(groupId);
+    if (routeIds == null) return;
+    for (final routeId in routeIds) {
+      _routes.remove(routeId);
+    }
   }
 
   Future<Directory> _ensureDir() async {
@@ -192,6 +217,7 @@ class StreamAudioCache extends ChangeNotifier {
     required AudioCacheKey key,
     required Uri remoteUri,
     Map<String, String> headers = const {},
+    String? routeGroup,
   }) async {
     try {
       await _ensureDir();
@@ -208,8 +234,8 @@ class StreamAudioCache extends ChangeNotifier {
         remoteUri: remoteUri,
         headers: Map<String, String>.from(headers),
       );
-      if (_routes.length > 256) {
-        _routes.remove(_routes.keys.first);
+      if (routeGroup != null) {
+        _routeGroups.putIfAbsent(routeGroup, () => <String>{}).add(routeId);
       }
       return Uri(
         scheme: 'http',
@@ -514,8 +540,10 @@ class StreamAudioCache extends ChangeNotifier {
     var writeFailed = false;
     var received = 0;
     var activeMarked = false;
+    // 每个缓存键同时只允许一个写入者；并发到达的其他请求直接透传上游音频，避免共享或互相覆盖 `.part`。
+    var holdsWriter = canCache && _writingKeys.add(target.key.id);
 
-    if (canCache) {
+    if (holdsWriter) {
       try {
         dir = await _ensureDir();
         markActive(target.key.id);
@@ -542,7 +570,7 @@ class StreamAudioCache extends ChangeNotifier {
       }
       final cacheDir = dir;
       final partFile = part;
-      if (canCache && cacheDir != null && partFile != null) {
+      if (holdsWriter && cacheDir != null && partFile != null) {
         final complete =
             !writeFailed &&
             received > 0 &&
@@ -568,8 +596,10 @@ class StreamAudioCache extends ChangeNotifier {
           await _safeDelete(partFile);
         }
       }
-      if (canCache) {
+      if (holdsWriter) {
         await evictIfNeeded();
+        _writingKeys.remove(target.key.id);
+        holdsWriter = false;
       }
       if (activeMarked) {
         // 刚提交的新文件若因更旧的活跃文件占用而暂超上限，等待旧文件释放后再回收，不立刻删掉刚写完的新文件。
@@ -591,7 +621,7 @@ class StreamAudioCache extends ChangeNotifier {
         }
         // 当上游给出精确 Content-Length 且收齐最后一片时，先完成落盘提交再把末片发给客户端，
         // 避免客户端一收到 Content-Length 字节立刻重播时还没完成重命名。
-        if (canCache &&
+        if (holdsWriter &&
             !writeFailed &&
             expectedLength > 0 &&
             received == expectedLength) {
@@ -607,8 +637,12 @@ class StreamAudioCache extends ChangeNotifier {
           await raf!.close();
         } catch (_) {}
       }
-      if (!finalized && part != null) {
-        await _safeDelete(part);
+      if (holdsWriter) {
+        if (!finalized && part != null) {
+          await _safeDelete(part);
+        }
+        _writingKeys.remove(target.key.id);
+        holdsWriter = false;
       }
       if (activeMarked) {
         releaseActive(target.key.id);
@@ -715,6 +749,8 @@ class StreamAudioCache extends ChangeNotifier {
   Future<void> dispose() async {
     _disposed = true;
     _routes.clear();
+    _routeGroups.clear();
+    _writingKeys.clear();
     final server = _server;
     _server = null;
     if (server != null) {

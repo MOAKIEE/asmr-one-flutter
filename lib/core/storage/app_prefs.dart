@@ -16,6 +16,7 @@ class AppPrefs {
 
   // --- keys ---
   static const _kToken = 'auth.token';
+  static const _kAccountScope = 'auth.accountScope';
   static const _kLocale = 'ui.locale';
   static const _kThemeMode = 'ui.themeMode';
   static const _kAccent = 'ui.accentSeed';
@@ -49,6 +50,21 @@ class AppPrefs {
       _sp.remove(_kToken);
     } else {
       _sp.setString(_kToken, value);
+    }
+  }
+
+  /// 与当前登录凭据绑定的稳定账号范围（不含明文令牌），用于冷启动恢复队列时隔离缓存。
+  String? get accountScope {
+    final s = _sp.getString(_kAccountScope)?.trim();
+    return (s == null || s.isEmpty) ? null : s;
+  }
+
+  set accountScope(String? value) {
+    final s = value?.trim();
+    if (s == null || s.isEmpty) {
+      _sp.remove(_kAccountScope);
+    } else {
+      _sp.setString(_kAccountScope, s);
     }
   }
 
@@ -214,7 +230,9 @@ class AppPrefs {
 
   Future<void> clearAll() async {
     final keep = token;
+    final keepScope = accountScope;
     await _sp.clear();
     if (keep != null) await _sp.setString(_kToken, keep);
+    if (keepScope != null) await _sp.setString(_kAccountScope, keepScope);
   }
 }
