@@ -570,6 +570,77 @@ class LibraryDb {
 
   Future<void> clearDocuments() => _db.delete('documents');
 
+  /// 统计自动匹配字幕缓存的条数与字幕正文 UTF-8 字节数（不含磁盘页开销）。
+  Future<AutoSubtitleCacheStats> autoSubtitleCacheStats() async {
+    final rows = await _db.query(
+      'documents',
+      columns: ['value'],
+      where: "key LIKE 'matchedSubtitle:%'",
+    );
+    var textBytes = 0;
+    for (final row in rows) {
+      try {
+        final decoded = jsonDecode(row['value'] as String);
+        if (decoded is Map) {
+          final source = decoded['source'];
+          if (source is String && source.isNotEmpty) {
+            textBytes += utf8.encode(source).length;
+          }
+        }
+      } catch (_) {}
+    }
+    return AutoSubtitleCacheStats(count: rows.length, textBytes: textBytes);
+  }
+
+  /// 清理所有自动匹配字幕正文，清理前先将旧记录中的非零手动偏移迁出到独立文档。
+  /// 保留手动导入/指定的 `subtitle:*`、书签 `bookmarks:*` 以及独立偏移 `subtitleOffset:*`。
+  Future<int> clearAutoSubtitleCache() => _db.transaction((txn) async {
+    final rows = await txn.query(
+      'documents',
+      columns: ['key', 'value'],
+      where: "key LIKE 'matchedSubtitle:%'",
+    );
+    if (rows.isEmpty) return 0;
+
+    for (final row in rows) {
+      final key = row['key'] as String;
+      final trackKey = key.substring('matchedSubtitle:'.length);
+      try {
+        final decoded = jsonDecode(row['value'] as String);
+        if (decoded is! Map) continue;
+        final attachmentId = decoded['attachmentId'] as String?;
+        final offsetMs = (decoded['offsetMs'] as num?)?.toInt() ?? 0;
+        if (attachmentId == null || attachmentId.isEmpty || offsetMs == 0) {
+          continue;
+        }
+        final offsetKey = 'subtitleOffset:$trackKey';
+        final existingRows = await txn.query(
+          'documents',
+          columns: ['value'],
+          where: 'key = ?',
+          whereArgs: [offsetKey],
+          limit: 1,
+        );
+        final offsets = <String, int>{};
+        if (existingRows.isNotEmpty) {
+          final existingDecoded = jsonDecode(
+            existingRows.single['value'] as String,
+          );
+          if (existingDecoded is Map) {
+            existingDecoded.forEach((k, v) {
+              if (k is String && v is num) offsets[k] = v.toInt();
+            });
+          }
+        }
+        // 已存在的独立偏移优先，仅迁出尚未落盘的旧记录偏移。
+        offsets.putIfAbsent(attachmentId, () => offsetMs);
+        await _writeDocument(txn, offsetKey, offsets);
+      } catch (_) {}
+    }
+
+    return txn.delete('documents', where: "key LIKE 'matchedSubtitle:%'");
+  });
+
   // ---------------------------------------------------------------------------
 
   Work? _decodeWork(Map<String, dynamic> row) {
@@ -611,6 +682,16 @@ class LibraryDb {
         .map((e) => {'lang': e.lang, 'label': e.label, 'workno': e.workno})
         .toList(),
   };
+}
+
+/// 自动匹配字幕缓存统计（`textBytes` 为字幕正文 UTF-8 字节数，与 SQLite 实际磁盘释放量可能不同）。
+class AutoSubtitleCacheStats {
+  const AutoSubtitleCacheStats({required this.count, required this.textBytes});
+
+  static const empty = AutoSubtitleCacheStats(count: 0, textBytes: 0);
+
+  final int count;
+  final int textBytes;
 }
 
 /// 本地播放列表的行记录。

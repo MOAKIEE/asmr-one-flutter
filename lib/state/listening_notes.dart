@@ -333,17 +333,20 @@ class ListeningNotes extends ChangeNotifier {
       _notify();
     }
 
-    // 1. Read saved manual subtitle and cached auto-match from local storage.
+    // 1. Read saved manual subtitle, cached auto-match, and preserved per-attachment offsets.
     Object? rawManual;
     Object? rawMatched;
+    Map<String, int> savedOffsets = const {};
     try {
       final values = await Future.wait([
         library.readDocument('subtitle:$itemKey'),
         library.readDocument('matchedSubtitle:$itemKey'),
+        library.readDocument('subtitleOffset:$itemKey'),
       ]);
       if (!_isSubtitleCurrent(itemKey, generation)) return;
       rawManual = values[0];
       rawMatched = values[1];
+      savedOffsets = _parseSavedOffsets(values[2]);
     } catch (e) {
       if (!_isSubtitleCurrent(itemKey, generation)) return;
       _clearSubtitleFields(SubtitleStatus.parseError);
@@ -571,9 +574,10 @@ class ListeningNotes extends ChangeNotifier {
 
         if (!_isSubtitleCurrent(itemKey, generation)) return;
         final preservedOffset =
-            cached?.attachmentId == attachment.attachmentId
-            ? cached!.offsetMs
-            : 0;
+            savedOffsets[attachment.attachmentId] ??
+            (cached?.attachmentId == attachment.attachmentId
+                ? cached!.offsetMs
+                : 0);
 
         await library.writeDocument('matchedSubtitle:$itemKey', {
           'attachmentId': attachment.attachmentId,
@@ -763,14 +767,16 @@ class ListeningNotes extends ChangeNotifier {
           'origin': manualOrigin.name,
       });
     } else if (subtitleSource == SubtitleSource.auto) {
+      final attachmentId = _matchedAttachmentId ?? subtitleName;
       await library.writeDocument('matchedSubtitle:$itemKey', {
-        'attachmentId': _matchedAttachmentId ?? subtitleName,
+        'attachmentId': attachmentId,
         'name': subtitleName,
         'source': _source,
         'language': _matchedLanguage ?? _preferredLanguage(),
         'ruleVersion': SubtitleMatcher.ruleVersion,
         'offsetMs': value,
       });
+      await _writeAttachmentOffset(itemKey, attachmentId, value);
     } else {
       return;
     }
@@ -802,6 +808,35 @@ class ListeningNotes extends ChangeNotifier {
       _clearSubtitleFields(SubtitleStatus.empty);
       _notify();
     }
+  }
+
+  static Map<String, int> _parseSavedOffsets(Object? raw) {
+    if (raw is! Map) return const {};
+    final out = <String, int>{};
+    raw.forEach((k, v) {
+      if (k is String && v is num) out[k] = v.toInt();
+    });
+    return out;
+  }
+
+  Future<void> _writeAttachmentOffset(
+    String itemKey,
+    String attachmentId,
+    int value,
+  ) async {
+    final existing = _parseSavedOffsets(
+      await library.readDocument('subtitleOffset:$itemKey'),
+    );
+    final next = Map<String, int>.from(existing);
+    if (value == 0) {
+      next.remove(attachmentId);
+    } else {
+      next[attachmentId] = value;
+    }
+    await library.writeDocument(
+      'subtitleOffset:$itemKey',
+      next.isEmpty ? null : next,
+    );
   }
 
   void _notify() {

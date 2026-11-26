@@ -336,6 +336,13 @@ const Map<String, String> _zh = {
   'settings.audioCache': '在线播放缓存',
   'settings.audioCacheCleared': '在线播放缓存已清除',
   'settings.audioCacheHint': '仅清除临时流媒体缓存，不影响离线下载的作品',
+  'settings.autoSubtitleCache': '自动匹配字幕缓存',
+  'settings.autoSubtitleCacheHint': '按字幕正文统计；保留手动字幕与时间偏移',
+  'settings.autoSubtitleCacheSummary': '{n} 条 · 正文 {size}',
+  'settings.autoSubtitleCacheConfirm':
+      '将清除 {n} 条自动匹配字幕缓存（字幕正文 {size}，数据库实际可释放磁盘空间可能不同）。清理后自动匹配的离线字幕需联网重新获取；手动导入或指定的字幕及已校准的时间偏移将被保留。',
+  'settings.autoSubtitleCacheCleared': '自动匹配字幕缓存已清除',
+  'settings.autoSubtitleCacheEmpty': '暂无自动匹配字幕缓存',
   'settings.clearData': '清除本地数据',
   'settings.clearDataConfirm':
       '将删除全部收藏、收听与搜索历史、本地列表、收听进度、书签、导入的字幕，以及下载记录与音频文件，且不可恢复。',
@@ -690,6 +697,13 @@ const Map<String, String> _ja = {
   'settings.audioCache': 'ストリーミング音声キャッシュ',
   'settings.audioCacheCleared': '音声キャッシュを削除しました',
   'settings.audioCacheHint': '一時キャッシュのみ削除します。ダウンロード済み作品には影響しません',
+  'settings.autoSubtitleCache': '自動一致字幕キャッシュ',
+  'settings.autoSubtitleCacheHint': '字幕テキストサイズ基準。手動字幕とオフセットは保持',
+  'settings.autoSubtitleCacheSummary': '{n} 件 · テキスト {size}',
+  'settings.autoSubtitleCacheConfirm':
+      '{n} 件の自動一致字幕キャッシュ（字幕テキスト {size}、DB の実際の空き容量変化とは異なる場合があります）を削除します。削除後、自動一致字幕のオフライン表示には再取得が必要です。手動字幕と調整済みオフセットは保持されます。',
+  'settings.autoSubtitleCacheCleared': '自動一致字幕キャッシュを削除しました',
+  'settings.autoSubtitleCacheEmpty': '自動一致字幕キャッシュはありません',
   'settings.clearData': 'ローカルデータを削除',
   'settings.clearDataConfirm':
       'お気に入り・再生履歴・検索履歴・ローカルリスト・再生位置・ブックマーク・読み込んだ字幕・ダウンロード記録と音声ファイルをすべて削除します。元に戻せません。',
@@ -1051,6 +1065,14 @@ const Map<String, String> _en = {
   'settings.audioCacheCleared': 'Streaming audio cache cleared',
   'settings.audioCacheHint':
       'Clears temporary stream cache only; downloaded works remain available offline',
+  'settings.autoSubtitleCache': 'Auto-matched subtitle cache',
+  'settings.autoSubtitleCacheHint':
+      'Measured by subtitle text size; keeps manual subtitles & offsets',
+  'settings.autoSubtitleCacheSummary': '{n} items · text {size}',
+  'settings.autoSubtitleCacheConfirm':
+      'Clear {n} auto-matched subtitle entries ({size} of subtitle text; actual database disk space reclaimed may differ). Offline auto-matched subtitles will need to be fetched again. Manual subtitles and saved time offsets are preserved.',
+  'settings.autoSubtitleCacheCleared': 'Auto-matched subtitle cache cleared',
+  'settings.autoSubtitleCacheEmpty': 'No cached auto-matched subtitles',
   'settings.clearData': 'Clear local data',
   'settings.clearDataConfirm':
       'Deletes all favorites, listening and search history, local playlists, playback progress, bookmarks, imported subtitles, download records, and audio files. This cannot be undone.',

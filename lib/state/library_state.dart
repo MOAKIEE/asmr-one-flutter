@@ -14,8 +14,13 @@ class LibraryState extends ChangeNotifier {
   Future<Object?> readDocument(String key) => _db.readDocument(key);
   Future<Map<String, Object?>> readDocuments(List<String> keys) =>
       _db.readDocuments(keys);
-  Future<void> writeDocument(String key, Object? value) =>
-      _serial(() => _db.writeDocument(key, value));
+  Future<void> writeDocument(String key, Object? value) => _serial(() async {
+    await _db.writeDocument(key, value);
+    if (key.startsWith('matchedSubtitle:')) {
+      _autoSubtitleCacheStats = await _db.autoSubtitleCacheStats();
+      notifyListeners();
+    }
+  });
   Future<void> writeDocuments(Map<String, Object?> values) =>
       _serial(() => _db.writeDocuments(values));
   Future<String> exportBackup() => _serial(_db.exportBackup);
@@ -29,6 +34,24 @@ class LibraryState extends ChangeNotifier {
   int _documentsVersion = 0;
 
   int get documentsVersion => _documentsVersion;
+
+  AutoSubtitleCacheStats _autoSubtitleCacheStats = AutoSubtitleCacheStats.empty;
+  AutoSubtitleCacheStats get autoSubtitleCacheStats => _autoSubtitleCacheStats;
+
+  Future<AutoSubtitleCacheStats> refreshAutoSubtitleCacheStats() =>
+      _serial(() async {
+        _autoSubtitleCacheStats = await _db.autoSubtitleCacheStats();
+        notifyListeners();
+        return _autoSubtitleCacheStats;
+      });
+
+  Future<int> clearAutoSubtitleCache() => _serial(() async {
+    final removed = await _db.clearAutoSubtitleCache();
+    _autoSubtitleCacheStats = AutoSubtitleCacheStats.empty;
+    _documentsVersion++;
+    notifyListeners();
+    return removed;
+  });
 
   List<Work> _favorites = const [];
   List<Work> _history = const [];
@@ -59,6 +82,7 @@ class LibraryState extends ChangeNotifier {
     _history = await _db.history();
     _localPlaylists = await _db.localPlaylists();
     _downloads = await _db.downloads();
+    _autoSubtitleCacheStats = await _db.autoSubtitleCacheStats();
     notifyListeners();
   });
 
@@ -218,6 +242,7 @@ class LibraryState extends ChangeNotifier {
     }
     await _db.clearProgress();
     await _db.clearDocuments();
+    _autoSubtitleCacheStats = AutoSubtitleCacheStats.empty;
     _documentsVersion++;
     _favorites = const [];
     _favoriteIds = {};

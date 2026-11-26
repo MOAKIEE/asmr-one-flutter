@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../core/api/api_client.dart';
 import '../core/app_info.dart';
 import '../core/models/release.dart';
+import '../core/storage/library_db.dart';
 import '../core/storage/stream_audio_cache.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/formatters.dart';
@@ -31,6 +32,8 @@ class SettingsScreen extends StatelessWidget {
     final l = L10n.of(context);
     final settings = context.watch<SettingsState>();
     final auth = context.watch<AuthState>();
+    final library = context.watch<LibraryState>();
+    final subtitleStats = _subtitleStatsOf(library);
     final audioCache = _watchAudioCacheOrNull(context);
     final updates = context.watchUpdateOrNull();
     final version = AppVersion.normalizeLabel(
@@ -228,6 +231,18 @@ class SettingsScreen extends StatelessWidget {
                       _toast(context, l('settings.audioCacheCleared'));
                     }
                   },
+                ),
+                const Divider(indent: 56, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.subtitles_outlined),
+                  title: Text(l('settings.autoSubtitleCache')),
+                  subtitle: Text(l('settings.autoSubtitleCacheHint')),
+                  trailing: Text(
+                    Fmt.size(subtitleStats.textBytes),
+                    style: theme.textTheme.labelMedium,
+                  ),
+                  onTap: () =>
+                      _confirmClearAutoSubtitles(context, library, subtitleStats),
                 ),
                 const Divider(indent: 56, endIndent: 16),
                 ListTile(
@@ -703,6 +718,53 @@ class SettingsScreen extends StatelessWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _confirmClearAutoSubtitles(
+    BuildContext context,
+    LibraryState library,
+    AutoSubtitleCacheStats stats,
+  ) async {
+    final l = L10n.of(context);
+    if (stats.count == 0) {
+      _toast(context, l('settings.autoSubtitleCacheEmpty'));
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(l('settings.autoSubtitleCache')),
+        content: Text(
+          l('settings.autoSubtitleCacheConfirm', {
+            'n': stats.count,
+            'size': Fmt.size(stats.textBytes),
+          }),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l('common.cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(l('common.confirm')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    await library.clearAutoSubtitleCache();
+    if (context.mounted) {
+      _toast(context, l('settings.autoSubtitleCacheCleared'));
+    }
+  }
+
+  AutoSubtitleCacheStats _subtitleStatsOf(LibraryState library) {
+    try {
+      return library.autoSubtitleCacheStats;
+    } on NoSuchMethodError {
+      return AutoSubtitleCacheStats.empty;
+    }
   }
 
   StreamAudioCache? _watchAudioCacheOrNull(BuildContext context) {
