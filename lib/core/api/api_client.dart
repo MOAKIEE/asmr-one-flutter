@@ -632,16 +632,25 @@ class ApiClient {
 
   /// 解析音频节点的可播放地址：
   /// 优先使用接口直接给出的 CDN 地址，缺失（付费作品）时回退到带 token 的接口地址。
-  String? resolveStreamUrl(TrackNode node, {bool preferLowQuality = false}) {
+  String? resolveStreamUrl(TrackNode node, {bool preferLowQuality = false}) =>
+      resolveStreamTarget(node, preferLowQuality: preferLowQuality)?.url;
+
+  /// 同时返回解析后的地址与实际命中的音质（用于流媒体缓存键隔离）。
+  ({String url, bool lowQuality})? resolveStreamTarget(
+    TrackNode node, {
+    bool preferLowQuality = false,
+  }) {
     if (preferLowQuality && (node.streamLowQualityUrl ?? '').isNotEmpty) {
-      return node.streamLowQualityUrl;
+      return (url: node.streamLowQualityUrl!, lowQuality: true);
     }
-    if ((node.mediaStreamUrl ?? '').isNotEmpty) return node.mediaStreamUrl;
+    if ((node.mediaStreamUrl ?? '').isNotEmpty) {
+      return (url: node.mediaStreamUrl!, lowQuality: false);
+    }
     if (preferLowQuality && (node.hash ?? '').isNotEmpty) {
-      return mediaStreamUrl(node.hash!, lowQuality: true);
+      return (url: mediaStreamUrl(node.hash!, lowQuality: true), lowQuality: true);
     }
     if ((node.hash ?? '').isNotEmpty && hasToken) {
-      return mediaStreamUrl(node.hash!);
+      return (url: mediaStreamUrl(node.hash!), lowQuality: false);
     }
     return null;
   }

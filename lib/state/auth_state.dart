@@ -7,6 +7,7 @@ import '../core/models/playlist.dart';
 import '../core/models/user.dart';
 import '../core/models/work.dart';
 import '../core/storage/app_prefs.dart';
+import '../core/storage/stream_audio_cache.dart';
 
 /// 登录状态 + 依赖登录态的云端数据（播放列表、标签目录）。
 class AuthState extends ChangeNotifier {
@@ -46,6 +47,13 @@ class AuthState extends ChangeNotifier {
     final uname = _user.name ?? '';
     return '$_sessionVersion:$uid:$uname:$t';
   }
+
+  /// 用于流媒体缓存隔离的稳定账号范围（不含明文令牌，令牌刷新后不变）。
+  String get cacheAccountScope => StreamAudioCache.accountScopeFor(
+    hasToken: hasToken,
+    userId: _user.id,
+    userName: _user.name,
+  );
   bool get authEnabled => _authEnabled;
   bool get regEnabled => _regEnabled;
   bool get busy => _busy;

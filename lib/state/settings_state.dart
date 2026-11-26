@@ -138,6 +138,14 @@ class SettingsState extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get streamCacheEnabled => _prefs.streamCacheEnabled;
+
+  set streamCacheEnabled(bool v) {
+    if (v == streamCacheEnabled) return;
+    _prefs.streamCacheEnabled = v;
+    notifyListeners();
+  }
+
   bool get volumeBoost => _prefs.volumeBoost;
 
   set volumeBoost(bool v) {

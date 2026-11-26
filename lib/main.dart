@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'app.dart';
 import 'core/storage/app_prefs.dart';
 import 'core/storage/library_db.dart';
+import 'core/storage/stream_audio_cache.dart';
 import 'state/auth_state.dart';
 import 'state/download_state.dart';
 import 'state/library_state.dart';
@@ -99,6 +100,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
   late final SettingsState _settings;
   late final AuthState _auth;
   late final LibraryState _library;
+  late final StreamAudioCache _audioCache;
   late final PlayerState _player;
   late final ListeningNotes _notes;
   late final DownloadState _downloads;
@@ -109,9 +111,12 @@ class _BootstrapAppState extends State<BootstrapApp> {
     super.initState();
     _settings = SettingsState(widget.prefs);
     _library = LibraryState(widget.db);
+    _audioCache = StreamAudioCache();
     _player = PlayerState(
       settings: _settings,
       library: _library,
+      audioCache: _audioCache,
+      accountScope: () => _auth.cacheAccountScope,
       readSession: _library.readDocuments,
       writeSession: _library.writeDocuments,
     );
@@ -128,6 +133,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
 
   Future<void> _bootstrap() async {
     await _library.refresh();
+    unawaited(_audioCache.refreshStats());
     await _player.restoreSession();
     await _downloads.initialize();
     await _updates.initVersion();
@@ -143,6 +149,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
     _downloads.dispose();
     _notes.dispose();
     _player.dispose();
+    unawaited(_audioCache.dispose());
     _library.dispose();
     _auth.dispose();
     _settings.dispose();
@@ -156,6 +163,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
         ChangeNotifierProvider<SettingsState>.value(value: _settings),
         ChangeNotifierProvider<AuthState>.value(value: _auth),
         ChangeNotifierProvider<LibraryState>.value(value: _library),
+        ChangeNotifierProvider<StreamAudioCache>.value(value: _audioCache),
         ChangeNotifierProvider<PlayerState>.value(value: _player),
         ChangeNotifierProvider<ListeningNotes>.value(value: _notes),
         ChangeNotifierProvider<DownloadState>.value(value: _downloads),

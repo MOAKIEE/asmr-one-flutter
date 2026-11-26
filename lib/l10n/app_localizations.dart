@@ -264,6 +264,8 @@ const Map<String, String> _zh = {
   'player.sleepIn': '{n} 分钟后停止',
   'player.lowQuality': '低音质（省流量）',
   'player.autoNext': '播完自动下一首',
+  'player.streamCache': '在线播放缓存',
+  'player.streamCacheHint': '边播边缓存整轨以节省重听流量，独立于离线下载',
   'player.volumeBoost': '音量增强',
   'player.nothing': '还没有播放内容',
   'player.nothingHint': '去挑一个喜欢的作品开始收听吧',
@@ -331,6 +333,9 @@ const Map<String, String> _zh = {
   'settings.storage': '存储',
   'settings.clearCache': '清除图片缓存',
   'settings.cacheCleared': '缓存已清除',
+  'settings.audioCache': '在线播放缓存',
+  'settings.audioCacheCleared': '在线播放缓存已清除',
+  'settings.audioCacheHint': '仅清除临时流媒体缓存，不影响离线下载的作品',
   'settings.clearData': '清除本地数据',
   'settings.clearDataConfirm':
       '将删除全部收藏、收听与搜索历史、本地列表、收听进度、书签、导入的字幕，以及下载记录与音频文件，且不可恢复。',
@@ -612,6 +617,8 @@ const Map<String, String> _ja = {
   'player.sleepIn': '{n} 分後に停止',
   'player.lowQuality': '低音質（通信量節約）',
   'player.autoNext': '自動で次の曲へ',
+  'player.streamCache': 'ストリーミング音声キャッシュ',
+  'player.streamCacheHint': '再生しながら一時保存して再視聴時の通信量を節約（ダウンロードとは別管理）',
   'player.volumeBoost': '音量ブースト',
   'player.nothing': '再生中のトラックがありません',
   'player.nothingHint': 'お気に入りの作品を選んで聴いてみましょう',
@@ -680,6 +687,9 @@ const Map<String, String> _ja = {
   'settings.storage': 'ストレージ',
   'settings.clearCache': '画像キャッシュを削除',
   'settings.cacheCleared': 'キャッシュを削除しました',
+  'settings.audioCache': 'ストリーミング音声キャッシュ',
+  'settings.audioCacheCleared': '音声キャッシュを削除しました',
+  'settings.audioCacheHint': '一時キャッシュのみ削除します。ダウンロード済み作品には影響しません',
   'settings.clearData': 'ローカルデータを削除',
   'settings.clearDataConfirm':
       'お気に入り・再生履歴・検索履歴・ローカルリスト・再生位置・ブックマーク・読み込んだ字幕・ダウンロード記録と音声ファイルをすべて削除します。元に戻せません。',
@@ -965,6 +975,9 @@ const Map<String, String> _en = {
   'player.sleepIn': 'Stop in {n} min',
   'player.lowQuality': 'Low quality (data saver)',
   'player.autoNext': 'Auto play next',
+  'player.streamCache': 'Streaming audio cache',
+  'player.streamCacheHint':
+      'Cache full tracks while streaming to save data on replay, separate from downloads',
   'player.volumeBoost': 'Volume boost',
   'player.nothing': 'Nothing is playing',
   'player.nothingHint': 'Pick a work you like and start listening',
@@ -1034,6 +1047,10 @@ const Map<String, String> _en = {
   'settings.storage': 'Storage',
   'settings.clearCache': 'Clear image cache',
   'settings.cacheCleared': 'Cache cleared',
+  'settings.audioCache': 'Streaming audio cache',
+  'settings.audioCacheCleared': 'Streaming audio cache cleared',
+  'settings.audioCacheHint':
+      'Clears temporary stream cache only; downloaded works remain available offline',
   'settings.clearData': 'Clear local data',
   'settings.clearDataConfirm':
       'Deletes all favorites, listening and search history, local playlists, playback progress, bookmarks, imported subtitles, download records, and audio files. This cannot be undone.',

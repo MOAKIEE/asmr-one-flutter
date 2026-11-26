@@ -29,6 +29,7 @@ class AppPrefs {
   static const _kPlaybackSpeed = 'player.speed';
   static const _kLowQuality = 'player.lowQuality';
   static const _kAutoPlayNext = 'player.autoPlayNext';
+  static const _kStreamCache = 'player.streamCache';
   static const _kVolumeBoost = 'player.volumeBoost';
   static const _kSleepMinutes = 'player.sleepMinutes';
   static const _kFirstRun = 'app.firstRun';
@@ -157,6 +158,11 @@ class AppPrefs {
   bool get autoPlayNext => _sp.getBool(_kAutoPlayNext) ?? true;
 
   set autoPlayNext(bool v) => _sp.setBool(_kAutoPlayNext, v);
+
+  /// 是否启用在线流媒体音频缓存（独立于离线下载）。
+  bool get streamCacheEnabled => _sp.getBool(_kStreamCache) ?? false;
+
+  set streamCacheEnabled(bool v) => _sp.setBool(_kStreamCache, v);
 
   bool get volumeBoost => _sp.getBool(_kVolumeBoost) ?? false;
 

@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 import '../core/api/api_client.dart';
 import '../core/app_info.dart';
 import '../core/models/release.dart';
+import '../core/storage/stream_audio_cache.dart';
 import '../core/theme/app_theme.dart';
+import '../core/utils/formatters.dart';
 import '../l10n/app_localizations.dart';
 import '../state/auth_state.dart';
 import '../state/download_state.dart';
@@ -29,6 +31,7 @@ class SettingsScreen extends StatelessWidget {
     final l = L10n.of(context);
     final settings = context.watch<SettingsState>();
     final auth = context.watch<AuthState>();
+    final audioCache = _watchAudioCacheOrNull(context);
     final updates = context.watchUpdateOrNull();
     final version = AppVersion.normalizeLabel(
       updates?.currentVersion ?? AppInfo.fallbackVersion,
@@ -164,6 +167,14 @@ class SettingsScreen extends StatelessWidget {
                   onChanged: (v) => settings.autoPlayNext = v,
                 ),
                 const Divider(indent: 56, endIndent: 16),
+                SwitchListTile(
+                  secondary: const Icon(Icons.cached_rounded),
+                  title: Text(l('player.streamCache')),
+                  subtitle: Text(l('player.streamCacheHint')),
+                  value: settings.streamCacheEnabled,
+                  onChanged: (v) => settings.streamCacheEnabled = v,
+                ),
+                const Divider(indent: 56, endIndent: 16),
                 ListTile(
                   leading: const Icon(Icons.speed_rounded),
                   title: Text(l('player.speed')),
@@ -199,6 +210,22 @@ class SettingsScreen extends StatelessWidget {
                     await DefaultCacheManager().emptyCache();
                     if (context.mounted) {
                       _toast(context, l('settings.cacheCleared'));
+                    }
+                  },
+                ),
+                const Divider(indent: 56, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.audiotrack_outlined),
+                  title: Text(l('settings.audioCache')),
+                  subtitle: Text(l('settings.audioCacheHint')),
+                  trailing: Text(
+                    Fmt.size(audioCache?.cachedBytes ?? 0),
+                    style: theme.textTheme.labelMedium,
+                  ),
+                  onTap: () async {
+                    await audioCache?.clearAll();
+                    if (context.mounted) {
+                      _toast(context, l('settings.audioCacheCleared'));
                     }
                   },
                 ),
@@ -575,7 +602,9 @@ class SettingsScreen extends StatelessWidget {
 
     final library = context.read<LibraryState>();
     final downloads = context.read<DownloadState>();
+    final audioCache = _readAudioCacheOrNull(context);
     await context.read<PlayerState>().stop();
+    await audioCache?.clearAll(includeActive: true);
     final failed = await downloads.clearAll();
     await library.clearAllLocalData();
     await settings.clearSearchHistory();
@@ -674,6 +703,22 @@ class SettingsScreen extends StatelessWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  StreamAudioCache? _watchAudioCacheOrNull(BuildContext context) {
+    try {
+      return context.watch<StreamAudioCache>();
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  StreamAudioCache? _readAudioCacheOrNull(BuildContext context) {
+    try {
+      return context.read<StreamAudioCache>();
+    } on ProviderNotFoundException {
+      return null;
+    }
   }
 }
 

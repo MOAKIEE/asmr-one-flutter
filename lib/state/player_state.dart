@@ -16,6 +16,7 @@ import '../core/api/api_client.dart';
 import '../core/models/track.dart';
 import '../core/models/work.dart';
 import '../core/storage/library_db.dart';
+import '../core/storage/stream_audio_cache.dart';
 import 'library_state.dart';
 import 'settings_state.dart';
 
@@ -32,6 +33,7 @@ class PlayItem {
     this.folderLabel = '',
     this.duration,
     this.localPath,
+    this.lowQuality = false,
   });
 
   final int workId;
@@ -44,6 +46,7 @@ class PlayItem {
   final String folderLabel;
   final Duration? duration;
   final String? localPath;
+  final bool lowQuality;
 
   bool get isLocal => (localPath ?? '').isNotEmpty;
 }
@@ -55,6 +58,8 @@ class PlayerState extends ChangeNotifier {
     required LibraryState library,
     ja.AudioPlayer? audioPlayer,
     ApiClient? api,
+    StreamAudioCache? audioCache,
+    String Function()? accountScope,
     this.readSession,
     this.writeSession,
     DateTime Function()? now,
@@ -62,6 +67,8 @@ class PlayerState extends ChangeNotifier {
        _now = now ?? DateTime.now,
        _library = library,
        _api = api ?? ApiClient.instance,
+       _audioCache = audioCache,
+       _accountScope = accountScope,
        _player = audioPlayer ?? ja.AudioPlayer() {
     _autoPlayNext = settings.autoPlayNext;
     _settings.addListener(_settingsChanged);
@@ -72,6 +79,9 @@ class PlayerState extends ChangeNotifier {
   final SettingsState _settings;
   final LibraryState _library;
   final ApiClient _api;
+  final StreamAudioCache? _audioCache;
+  final String Function()? _accountScope;
+  final Set<String> _activeCacheKeys = {};
 
   final ja.AudioPlayer _player;
   final DateTime Function() _now;
@@ -131,6 +141,7 @@ class PlayerState extends ChangeNotifier {
                     'folderLabel': item.folderLabel,
                     'duration': item.duration?.inMilliseconds,
                     'localPath': item.localPath,
+                    if (item.lowQuality) 'lowQuality': true,
                   },
               ],
       });
@@ -200,6 +211,7 @@ class PlayerState extends ChangeNotifier {
             circleName: m['circleName'] as String? ?? '',
             folderLabel: m['folderLabel'] as String? ?? '',
             localPath: local,
+            lowQuality: m['lowQuality'] == true,
             duration: m['duration'] == null
                 ? null
                 : Duration(milliseconds: m['duration'] as int),
@@ -445,22 +457,42 @@ class PlayerState extends ChangeNotifier {
       if (version != _sourceVersion) return false;
       final ids = _mediaIds(items);
       final token = _api.token ?? '';
-      final sources = _singleSource
-          ? [_toSource(items[index], ids[index], token)]
-          : [
-              for (var i = 0; i < items.length; i++)
-                _toSource(items[i], ids[i], token),
-            ];
-      final nextMediaToken = sources.any((source) => _isApiMedia(source.uri))
-          ? token
-          : null;
+      final targetIndices = _singleSource
+          ? [index]
+          : List.generate(items.length, (i) => i);
+      final nextActiveKeys = <String>{};
+      final sources = <ja.UriAudioSource>[];
+      var hasApiMedia = false;
+      for (final i in targetIndices) {
+        final item = items[i];
+        if (!item.isLocal && item.url.isNotEmpty) {
+          final parsed = Uri.tryParse(item.url);
+          if (parsed != null && _isApiMedia(parsed)) hasApiMedia = true;
+        }
+        sources.add(
+          await _resolveSource(item, ids[i], token, nextActiveKeys),
+        );
+        if (version != _sourceVersion) {
+          for (final keyId in nextActiveKeys) {
+            _audioCache?.releaseActive(keyId);
+          }
+          return false;
+        }
+      }
+      final nextMediaToken = hasApiMedia ? token : null;
       await _player.setAudioSources(
         sources,
         preload: preload,
         initialIndex: _singleSource ? 0 : index,
         initialPosition: position,
       );
-      if (version != _sourceVersion) return false;
+      if (version != _sourceVersion) {
+        for (final keyId in nextActiveKeys) {
+          _audioCache?.releaseActive(keyId);
+        }
+        return false;
+      }
+      _replaceActiveCacheKeys(nextActiveKeys);
       _appliedMediaToken = nextMediaToken;
     } catch (_) {
       if (version == _sourceVersion) rethrow;
@@ -534,13 +566,16 @@ class PlayerState extends ChangeNotifier {
     for (var i = 0; i < tracks.length; i++) {
       final t = tracks[i];
       final hash = t.hash;
-      final local = hash == null ? null : localPaths[hash];
-      final url = (local != null && local.isNotEmpty)
+      final downloaded = hash == null ? null : localPaths[hash];
+      final useLocal = downloaded != null && downloaded.isNotEmpty;
+      final target = useLocal
           ? null
-          : _api.resolveStreamUrl(
+          : _api.resolveStreamTarget(
               t.node,
               preferLowQuality: _settings.preferLowQuality,
             );
+      final local = useLocal ? downloaded : null;
+      final url = target?.url;
       if (local == null && url == null) {
         unplayable++;
         continue;
@@ -554,6 +589,7 @@ class PlayerState extends ChangeNotifier {
           hash: hash,
           url: _queueUrl(url),
           localPath: local,
+          lowQuality: !useLocal && (target?.lowQuality ?? false),
           coverUrl: cover,
           circleName: work.circleName,
           folderLabel: t.folderLabel,
@@ -641,13 +677,16 @@ class PlayerState extends ChangeNotifier {
     final cover = _api.coverUrl(work.id, type: 'main');
     final localPaths = await _library.downloadedPaths(work.id);
     final hash = track.hash;
-    final local = hash == null ? null : localPaths[hash];
-    final url = (local != null && local.isNotEmpty)
+    final downloaded = hash == null ? null : localPaths[hash];
+    final useLocal = downloaded != null && downloaded.isNotEmpty;
+    final target = useLocal
         ? null
-        : _api.resolveStreamUrl(
+        : _api.resolveStreamTarget(
             track.node,
             preferLowQuality: _settings.preferLowQuality,
           );
+    final local = useLocal ? downloaded : null;
+    final url = target?.url;
     if (local == null && url == null) {
       _error = '无法解析该曲目的播放地址，可能需要登录。';
       notifyListeners();
@@ -660,6 +699,7 @@ class PlayerState extends ChangeNotifier {
       hash: hash,
       url: _queueUrl(url),
       localPath: local,
+      lowQuality: !useLocal && (target?.lowQuality ?? false),
       coverUrl: cover,
       circleName: work.circleName,
       folderLabel: track.folderLabel,
@@ -741,12 +781,69 @@ class PlayerState extends ChangeNotifier {
     return unique;
   }
 
-  ja.UriAudioSource _toSource(PlayItem item, String mediaId, String token) {
-    var uri = item.isLocal ? Uri.file(item.localPath!) : Uri.parse(item.url);
-    if (_isApiMedia(uri)) {
-      uri = uri.replace(
-        queryParameters: {...uri.queryParameters, 'token': token},
-      );
+  String _currentAccountScope() =>
+      _accountScope?.call() ?? (_api.hasToken ? 'auth:session' : 'guest');
+
+  void _replaceActiveCacheKeys(Set<String> nextKeys) {
+    final cache = _audioCache;
+    if (cache == null) return;
+    for (final oldKey in _activeCacheKeys) {
+      cache.releaseActive(oldKey);
+    }
+    _activeCacheKeys
+      ..clear()
+      ..addAll(nextKeys);
+  }
+
+  void _releaseAllActiveCacheKeys() {
+    final cache = _audioCache;
+    if (cache == null || _activeCacheKeys.isEmpty) return;
+    for (final oldKey in _activeCacheKeys) {
+      cache.releaseActive(oldKey);
+    }
+    _activeCacheKeys.clear();
+  }
+
+  Future<ja.UriAudioSource> _resolveSource(
+    PlayItem item,
+    String mediaId,
+    String token,
+    Set<String> nextActiveKeys,
+  ) async {
+    Uri uri;
+    if (item.isLocal) {
+      uri = Uri.file(item.localPath!);
+    } else {
+      var remoteUri = Uri.parse(item.url);
+      if (_isApiMedia(remoteUri)) {
+        remoteUri = remoteUri.replace(
+          queryParameters: {...remoteUri.queryParameters, 'token': token},
+        );
+      }
+      uri = remoteUri;
+      final cache = _audioCache;
+      if (_settings.streamCacheEnabled && cache != null && item.url.isNotEmpty) {
+        final trackId = (item.hash != null && item.hash!.isNotEmpty)
+            ? item.hash!
+            : '${item.folderLabel}/${item.title}';
+        final key = AudioCacheKey(
+          accountScope: _currentAccountScope(),
+          workId: item.workId,
+          trackId: trackId,
+          lowQuality: item.lowQuality,
+        );
+        final resolved = await cache.resolvePlayableUri(
+          key: key,
+          remoteUri: remoteUri,
+          headers: const {'Referer': '${ApiClient.siteUrl}/'},
+        );
+        if (resolved != null) {
+          uri = resolved;
+          if (nextActiveKeys.add(key.id)) {
+            cache.markActive(key.id);
+          }
+        }
+      }
     }
     return ja.AudioSource.uri(
       uri,
@@ -852,6 +949,7 @@ class PlayerState extends ChangeNotifier {
     _currentIndex = -1;
     _work = null;
     _appliedMediaToken = null;
+    _releaseAllActiveCacheKeys();
     clearSleepTimer();
     _stopAfterTrack = false;
     clearAbLoop();
@@ -978,6 +1076,7 @@ class PlayerState extends ChangeNotifier {
     _settings.removeListener(_settingsChanged);
     _sleepTimer?.cancel();
     _progressTimer?.cancel();
+    _releaseAllActiveCacheKeys();
     _saveProgress().ignore();
     _player.dispose();
     super.dispose();
