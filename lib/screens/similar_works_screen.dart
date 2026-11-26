@@ -57,7 +57,7 @@ class _SimilarWorksScreenState extends State<SimilarWorksScreen> {
         subtitle: subtitleOnly,
       ),
       label: 'similar:${widget.work.id}:$subtitleOnly',
-      filter: showNsfw ? null : (work) => !work.nsfw,
+      filter: showNsfw ? null : (work) => work.isExplicitlyAllAges,
     );
     _feed = feed;
     feed.load();

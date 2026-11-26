@@ -170,6 +170,7 @@ class Work {
     required this.circleId,
     required this.circleName,
     required this.nsfw,
+    this.nsfwExplicit,
     required this.release,
     required this.dlCount,
     required this.price,
@@ -203,6 +204,9 @@ class Work {
   final int circleId;
   final String circleName;
   final bool nsfw;
+
+  /// 接口显式返回的分级标记；缺失或无法解析时为 `null`，避免未知分级被误判为全年龄。
+  final bool? nsfwExplicit;
   final String release;
   final int dlCount;
 
@@ -242,6 +246,9 @@ class Work {
 
   ListeningStatus? get listeningStatus => ListeningStatus.fromApi(progress);
 
+  /// 仅当接口明确声明 `nsfw == false` 时才视为全年龄作品。
+  bool get isExplicitlyAllAges => nsfwExplicit == false;
+
   bool get isFree => price == 0;
 
   /// DLsite 的 RJ / VJ 编号，例如 `RJ01653004`。
@@ -255,12 +262,14 @@ class Work {
     final circle = json['circle'] == null
         ? null
         : Circle.fromJson(asMap(json['circle']));
+    final parsedNsfw = asBoolOrNull(json['nsfw']);
     return Work(
       id: asInt(json['id']),
       title: asString(json['title']),
       circleId: asInt(json['circle_id']),
       circleName: asString(json['name']),
-      nsfw: asBool(json['nsfw']),
+      nsfw: parsedNsfw ?? false,
+      nsfwExplicit: parsedNsfw,
       release: asString(json['release']),
       dlCount: asInt(json['dl_count']),
       price: asInt(json['price']),

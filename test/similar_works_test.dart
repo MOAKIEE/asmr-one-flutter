@@ -214,7 +214,7 @@ void main() {
             totalCount: 4,
           );
         },
-        filter: (work) => !work.nsfw,
+        filter: (work) => work.isExplicitlyAllAges,
       );
       addTearDown(feed.dispose);
 
@@ -223,6 +223,125 @@ void main() {
       expect(feed.isEmpty, isFalse);
       expect(feed.items.map((w) => w.id), [3]);
       expect(feed.hasMore, isFalse);
+    },
+  );
+
+  test(
+    'Work.fromJson distinguishes explicit SFW/NSFW from missing or unparseable nsfw',
+    () {
+      final explicitSfw = Work.fromJson({'id': 1, 'title': 'A', 'nsfw': false});
+      final explicitSfwZero = Work.fromJson({'id': 2, 'title': 'B', 'nsfw': 0});
+      final explicitSfwStr = Work.fromJson({
+        'id': 3,
+        'title': 'C',
+        'nsfw': 'false',
+      });
+      final explicitNsfw = Work.fromJson({'id': 4, 'title': 'D', 'nsfw': true});
+      final missingNsfw = Work.fromJson({'id': 5, 'title': 'E'});
+      final nullNsfw = Work.fromJson({'id': 6, 'title': 'F', 'nsfw': null});
+      final invalidNsfw = Work.fromJson({
+        'id': 7,
+        'title': 'G',
+        'nsfw': 'unknown',
+      });
+
+      expect(explicitSfw.nsfwExplicit, isFalse);
+      expect(explicitSfw.isExplicitlyAllAges, isTrue);
+      expect(explicitSfwZero.isExplicitlyAllAges, isTrue);
+      expect(explicitSfwStr.isExplicitlyAllAges, isTrue);
+
+      expect(explicitNsfw.nsfwExplicit, isTrue);
+      expect(explicitNsfw.isExplicitlyAllAges, isFalse);
+
+      expect(missingNsfw.nsfwExplicit, isNull);
+      expect(missingNsfw.isExplicitlyAllAges, isFalse);
+      expect(nullNsfw.nsfwExplicit, isNull);
+      expect(nullNsfw.isExplicitlyAllAges, isFalse);
+      expect(invalidNsfw.nsfwExplicit, isNull);
+      expect(invalidNsfw.isExplicitlyAllAges, isFalse);
+    },
+  );
+
+  testWidgets(
+    'SimilarWorksScreen with showNsfw disabled excludes NSFW, missing, and unparseable nsfw works and auto-advances to page 2',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'ui.locale': 'zh-CN',
+        'ui.useCoverAccent': false,
+        'content.showNsfw': false,
+      });
+      final prefs = await AppPrefs.load();
+      final settings = SettingsState(prefs);
+      final auth = AuthState(prefs);
+      final library = _SimilarLibrary();
+      final downloads = DownloadState(library);
+      final player = PlayerState(
+        settings: settings,
+        library: library,
+        audioPlayer: TestAudio(),
+      );
+
+      final requestedPages = <int>[];
+      final api = _StubSimilarApi((workId, page, subtitle) async {
+        requestedPages.add(page);
+        if (page == 1) {
+          return WorksPage(
+            works: [
+              Work.fromJson({'id': 11, 'title': 'Explicit Adult', 'nsfw': true}),
+              Work.fromJson({'id': 12, 'title': 'Missing Rating'}),
+              Work.fromJson({
+                'id': 13,
+                'title': 'Unparseable Rating',
+                'nsfw': 'unknown',
+              }),
+            ],
+            page: 1,
+            pageSize: 3,
+            totalCount: 6,
+          );
+        }
+        return WorksPage(
+          works: [
+            Work.fromJson({'id': 14, 'title': 'Explicit All Ages', 'nsfw': false}),
+            Work.fromJson({'id': 15, 'title': 'Null Rating', 'nsfw': null}),
+            Work.fromJson({'id': 16, 'title': 'Page2 Adult', 'nsfw': '1'}),
+          ],
+          page: 2,
+          pageSize: 3,
+          totalCount: 6,
+        );
+      });
+
+      await tester.pumpWidget(
+        _wrapApp(
+          settings: settings,
+          auth: auth,
+          library: library,
+          downloads: downloads,
+          player: player,
+          home: SimilarWorksScreen(
+            work: Work.fromJson({'id': 42, 'title': 'Origin', 'nsfw': false}),
+            api: api,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(requestedPages, [1, 2]);
+      expect(find.text('Explicit All Ages'), findsOneWidget);
+      expect(find.text('Explicit Adult'), findsNothing);
+      expect(find.text('Missing Rating'), findsNothing);
+      expect(find.text('Unparseable Rating'), findsNothing);
+      expect(find.text('Null Rating'), findsNothing);
+      expect(find.text('Page2 Adult'), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      player.dispose();
+      downloads.dispose();
+      library.dispose();
+      auth.dispose();
+      settings.dispose();
     },
   );
 

@@ -42,14 +42,16 @@ String? asStringOrNull(dynamic v) {
   return s.isEmpty ? null : s;
 }
 
-bool asBool(dynamic v, [bool fallback = false]) {
-  if (v == null) return fallback;
+bool? asBoolOrNull(dynamic v) {
+  if (v == null) return null;
   if (v is bool) return v;
-  final s = v.toString().toLowerCase();
+  final s = v.toString().trim().toLowerCase();
   if (s == 'true' || s == '1') return true;
   if (s == 'false' || s == '0') return false;
-  return fallback;
+  return null;
 }
+
+bool asBool(dynamic v, [bool fallback = false]) => asBoolOrNull(v) ?? fallback;
 
 Map<String, dynamic> asMap(dynamic v) =>
     v is Map ? v.map((k, value) => MapEntry(k.toString(), value)) : const {};
