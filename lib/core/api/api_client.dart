@@ -12,6 +12,22 @@ import '../models/work.dart';
 import '../storage/app_prefs.dart';
 import 'resumable_download.dart';
 
+/// 按页回退扫描本人收听状态的结果（可保留游标继续向后扫描）。
+class ReviewStatusScanResult {
+  const ReviewStatusScanResult({
+    required this.completed,
+    this.status,
+    this.nextPage,
+  });
+
+  /// `true` 表示已定位到本人记录或已读完全部评论页（确认未标记）。
+  final bool completed;
+  final ListeningStatus? status;
+
+  /// 未读完且尚有下一页时记录下一次续扫的起始页码。
+  final int? nextPage;
+}
+
 /// 统一的 API 异常，携带可展示的文案。
 class ApiException implements Exception {
   ApiException(
@@ -451,12 +467,13 @@ class ApiClient {
     );
   }
 
-  /// 在详情响应缺少 `progress` 字段时，按页查找本人评论以定位收听状态。
-  /// 不会把“仅第 1 页缺失”误判为未标记。
-  Future<ListeningStatus?> fetchMyListeningStatusFromReviews(
+  /// 在详情响应缺少 `progress` 字段时，按批次分页查找本人评论并保留续扫游标。
+  /// 不会把“当前批次未命中”误判为未标记，也不在固定页数处直接失败阻断。
+  Future<ReviewStatusScanResult> scanMyListeningStatusFromReviews(
     int workId, {
     String? userId,
     String? userName,
+    int startPage = 1,
     int pageSize = 20,
     int maxPages = 10,
   }) async {
@@ -465,7 +482,10 @@ class ApiClient {
     if (uid.isEmpty && uname.isEmpty) {
       throw ApiException('无法确认当前账号身份，请刷新后重试。');
     }
-    for (var page = 1; page <= maxPages; page++) {
+    var page = startPage < 1 ? 1 : startPage;
+    final batchLimit = maxPages < 1 ? 1 : maxPages;
+    final endPage = page + batchLimit - 1;
+    while (page <= endPage) {
       final result = await fetchReviews(workId, page: page, pageSize: pageSize);
       for (final review in result.reviews) {
         final matchId = uid.isNotEmpty && review.userId?.trim() == uid;
@@ -473,14 +493,52 @@ class ApiClient {
             uname.isNotEmpty &&
             (review.userName?.trim().toLowerCase() ?? '') == uname;
         if (matchId || matchName) {
-          return review.listeningStatus;
+          return ReviewStatusScanResult(
+            completed: true,
+            status: review.listeningStatus,
+          );
         }
       }
       if (result.reviews.isEmpty || !result.hasMore) {
-        return null;
+        return const ReviewStatusScanResult(completed: true, status: null);
       }
+      page++;
     }
-    throw ApiException('未能定位当前账号的收听状态，请重试。');
+    return ReviewStatusScanResult(completed: false, nextPage: page);
+  }
+
+  /// 全量（或按指定批次上限）查找本人评论以定位收听状态。
+  /// 当 [maxPages] 为 `null` 时会自动跨过第 10 页持续向后读取直至定位或读完全部页。
+  Future<ListeningStatus?> fetchMyListeningStatusFromReviews(
+    int workId, {
+    String? userId,
+    String? userName,
+    int pageSize = 20,
+    int? maxPages,
+  }) async {
+    var nextPage = 1;
+    var remaining = maxPages;
+    while (true) {
+      final batch = remaining == null
+          ? 10
+          : (remaining < 10 ? remaining : 10);
+      final scan = await scanMyListeningStatusFromReviews(
+        workId,
+        userId: userId,
+        userName: userName,
+        startPage: nextPage,
+        pageSize: pageSize,
+        maxPages: batch,
+      );
+      if (scan.completed) return scan.status;
+      if (remaining != null) {
+        remaining -= batch;
+        if (remaining <= 0) {
+          throw ApiException('未能定位当前账号的收听状态，请重试。');
+        }
+      }
+      nextPage = scan.nextPage ?? (nextPage + batch);
+    }
   }
 
   /// 给作品的标签投票（`vote` 为 1 赞 / -1 踩 / 0 取消）。

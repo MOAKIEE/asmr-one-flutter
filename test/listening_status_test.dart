@@ -540,6 +540,199 @@ void main() {
       settings.dispose();
     },
   );
+
+  testWidgets(
+    'review fallback resumes scanning past page 10 to find page 11 status and allows first-time marking after scanning all pages with no record',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      SharedPreferences.setMockInitialValues({
+        'auth.token': 'tok-alice',
+        'ui.locale': 'zh-CN',
+        'ui.useCoverAccent': false,
+      });
+      final prefs = await AppPrefs.load();
+      final settings = SettingsState(prefs);
+      final library = _StatusLibrary();
+      final downloads = DownloadState(library);
+      final player = PlayerState(
+        settings: settings,
+        library: library,
+        audioPlayer: TestAudio(),
+      );
+
+      // Scenario A: user's review is on page 11 of a work whose detail omits `progress`.
+      final requestedPagesA = <int>[];
+      final apiA = ApiClient(
+        adapter: TestAdapter((request) {
+          if (request.uri.path == '/api/auth/me') {
+            return jsonResponse({
+              'user': {'loggedIn': true, 'id': 'u1', 'name': 'alice'},
+              'auth': true,
+              'reg': true,
+            });
+          }
+          if (request.method == 'GET' && request.uri.path == '/api/work/110') {
+            // Deliberately omit `progress` to trigger review pagination fallback.
+            return jsonResponse({'id': 110, 'title': 'Popular Work 110'});
+          }
+          if (request.uri.path == '/api/tracks/110') return jsonResponse([]);
+          if (request.uri.path == '/api/review') {
+            final page = request.queryParameters['page'] as int;
+            final pageSize = request.queryParameters['pageSize'] as int;
+            // Distinguish detail's display review list (pageSize=10) from status fallback scan (pageSize=20).
+            if (pageSize == 20) requestedPagesA.add(page);
+            if (pageSize == 20 && page == 11) {
+              return jsonResponse({
+                'reviews': [
+                  {
+                    'id': 11,
+                    'work_id': 110,
+                    'rating': 5,
+                    'progress': 'postponed',
+                    'user_name': 'alice',
+                  },
+                ],
+                'page': 11,
+                'pageSize': 20,
+                'totalCount': 240,
+              });
+            }
+            return jsonResponse({
+              'reviews': [
+                {
+                  'id': page,
+                  'work_id': 110,
+                  'rating': 4,
+                  'progress': 'listened',
+                  'user_name': 'other_$page',
+                },
+              ],
+              'page': page,
+              'pageSize': pageSize,
+              'totalCount': 240,
+            });
+          }
+          return jsonResponse({'works': [], 'pagination': {'totalCount': 0}});
+        }),
+      )..attachPrefs(prefs);
+      final authA = AuthState(prefs, api: apiA);
+      await tester.runAsync(() => authA.bootstrap());
+
+      await tester.pumpWidget(
+        _wrapDetail(
+          settings: settings,
+          auth: authA,
+          library: library,
+          downloads: downloads,
+          player: player,
+          home: WorkDetailScreen(
+            work: Work.fromJson({'id': 110, 'title': 'Popular Work 110'}),
+            api: apiA,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // First batch scanned pages 1..10 and offers "继续查找" instead of dead-ending at page 10.
+      expect(requestedPagesA, List.generate(10, (i) => i + 1));
+      expect(find.text('继续查找'), findsOneWidget);
+
+      // Tapping continues from page 11 ONLY (never restarts at page 1!) and displays "搁置".
+      await tester.tap(find.text('收听状态'));
+      await tester.pumpAndSettle();
+      expect(requestedPagesA, List.generate(11, (i) => i + 1));
+      expect(find.text('搁置'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      authA.dispose();
+
+      // Scenario B: 12 pages of reviews, none by alice -> after resuming scan, allows first-time marking!
+      final requestedPagesB = <int>[];
+      String? writtenProgress;
+      final apiB = ApiClient(
+        adapter: TestAdapter((request) {
+          if (request.uri.path == '/api/auth/me') {
+            return jsonResponse({
+              'user': {'loggedIn': true, 'id': 'u1', 'name': 'alice'},
+              'auth': true,
+              'reg': true,
+            });
+          }
+          if (request.method == 'GET' && request.uri.path == '/api/work/111') {
+            return jsonResponse({'id': 111, 'title': 'Unmarked Popular Work'});
+          }
+          if (request.uri.path == '/api/tracks/111') return jsonResponse([]);
+          if (request.method == 'PUT' && request.uri.path == '/api/review') {
+            writtenProgress = (request.data as Map)['progress'] as String;
+            return jsonResponse({'ok': true});
+          }
+          if (request.uri.path == '/api/review') {
+            final page = request.queryParameters['page'] as int;
+            final pageSize = request.queryParameters['pageSize'] as int;
+            if (pageSize == 20) requestedPagesB.add(page);
+            return jsonResponse({
+              'reviews': [
+                {
+                  'id': page,
+                  'work_id': 111,
+                  'rating': 4,
+                  'progress': 'listened',
+                  'user_name': 'other_$page',
+                },
+              ],
+              'page': page,
+              'pageSize': pageSize,
+              'totalCount': 240, // 12 pages at pageSize=20
+            });
+          }
+          return jsonResponse({'works': [], 'pagination': {'totalCount': 0}});
+        }),
+      )..attachPrefs(prefs);
+      final authB = AuthState(prefs, api: apiB);
+      await tester.runAsync(() => authB.bootstrap());
+
+      await tester.pumpWidget(
+        _wrapDetail(
+          settings: settings,
+          auth: authB,
+          library: library,
+          downloads: downloads,
+          player: player,
+          home: WorkDetailScreen(
+            work: Work.fromJson({'id': 111, 'title': 'Unmarked Popular Work'}),
+            api: apiB,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('继续查找'), findsOneWidget);
+
+      // Resume scan -> reads pages 11..12 -> concludes unmarked ("未标记").
+      await tester.tap(find.text('收听状态'));
+      await tester.pumpAndSettle();
+      expect(requestedPagesB, List.generate(12, (i) => i + 1));
+      expect(find.text('未标记'), findsOneWidget);
+
+      // User can now open picker and submit first-time mark ("想听").
+      await tester.tap(find.text('收听状态'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('想听'));
+      await tester.pumpAndSettle();
+      expect(writtenProgress, 'marked');
+      expect(find.text('想听'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      player.dispose();
+      downloads.dispose();
+      library.dispose();
+      authB.dispose();
+      settings.dispose();
+    },
+  );
 }
 
 class _DelayedWriteApi extends ApiClient {

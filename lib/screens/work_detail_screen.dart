@@ -61,6 +61,8 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   bool _loadingStatus = false;
   bool _savingStatus = false;
   bool _statusNeedsReconcile = false;
+  bool _reviewScanHasMore = false;
+  int _reviewScanNextPage = 1;
   String? _statusError;
   int _statusGeneration = 0;
   String? _observedAccountKey;
@@ -127,6 +129,8 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     _loadingStatus = false;
     _savingStatus = false;
     _statusNeedsReconcile = false;
+    _reviewScanHasMore = false;
+    _reviewScanNextPage = 1;
     _statusError = null;
     _reviews = ReviewPage.empty;
     _loadingReviews = false;
@@ -202,21 +206,32 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     int workId,
     AuthState auth,
     String accountKey,
-    int generation,
-  ) async {
+    int generation, {
+    int startPage = 1,
+  }) async {
     try {
-      final resolved = await _api.fetchMyListeningStatusFromReviews(
+      final scan = await _api.scanMyListeningStatusFromReviews(
         workId,
         userId: auth.user.id,
         userName: auth.user.name,
+        startPage: startPage,
+        maxPages: 10,
       );
       if (!_isStatusScopeValid(workId, accountKey, generation)) return;
       setState(() {
-        _listeningStatus = resolved;
-        _statusConfirmed = true;
         _loadingStatus = false;
         _statusError = null;
-        _statusNeedsReconcile = false;
+        if (scan.completed) {
+          _listeningStatus = scan.status;
+          _statusConfirmed = true;
+          _statusNeedsReconcile = false;
+          _reviewScanHasMore = false;
+          _reviewScanNextPage = 1;
+        } else {
+          _statusConfirmed = false;
+          _reviewScanHasMore = true;
+          _reviewScanNextPage = scan.nextPage ?? (startPage + 10);
+        }
       });
     } catch (e) {
       if (!_isStatusScopeValid(workId, accountKey, generation)) return;
@@ -249,6 +264,20 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     final workId = _work.id;
     final accountKey = auth.accountKey;
     final generation = ++_statusGeneration;
+    if (_reviewScanHasMore && _reviewScanNextPage > 1) {
+      setState(() {
+        _loadingStatus = true;
+        _statusError = null;
+      });
+      await _resolveStatusFromReviews(
+        workId,
+        auth,
+        accountKey,
+        generation,
+        startPage: _reviewScanNextPage,
+      );
+      return;
+    }
     setState(() {
       _loadingStatus = true;
       _statusError = null;
@@ -263,6 +292,8 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
         _loadingStatus = false;
         _statusError = null;
         _statusNeedsReconcile = false;
+        _reviewScanHasMore = false;
+        _reviewScanNextPage = 1;
       });
     } catch (e) {
       if (!_isStatusScopeValid(workId, accountKey, generation)) return;
@@ -282,7 +313,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
       return;
     }
     if (_savingStatus || _loadingStatus) return;
-    if (_statusError != null && !_statusConfirmed) {
+    if ((_statusError != null || _reviewScanHasMore) && !_statusConfirmed) {
       await _retryLoadStatus();
       return;
     }
@@ -617,6 +648,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
               listeningStatus: _statusConfirmed ? _listeningStatus : null,
               statusLoading: _loadingStatus,
               statusSaving: _savingStatus,
+              statusScanHasMore: _reviewScanHasMore && !_statusConfirmed,
               statusError: _statusError,
               onPlay: () => _playAll(),
               onShuffle: () => _playAll(shuffle: true),
@@ -833,6 +865,7 @@ class _HeaderCard extends StatelessWidget {
     required this.listeningStatus,
     required this.statusLoading,
     required this.statusSaving,
+    required this.statusScanHasMore,
     required this.statusError,
     required this.onPlay,
     required this.onShuffle,
@@ -854,6 +887,7 @@ class _HeaderCard extends StatelessWidget {
   final ListeningStatus? listeningStatus;
   final bool statusLoading;
   final bool statusSaving;
+  final bool statusScanHasMore;
   final String? statusError;
   final VoidCallback onPlay;
   final VoidCallback onShuffle;
@@ -1065,6 +1099,7 @@ class _HeaderCard extends StatelessWidget {
             status: listeningStatus,
             loading: statusLoading,
             saving: statusSaving,
+            scanHasMore: statusScanHasMore,
             error: statusError,
             onTap: onListeningStatus,
             onRetry: onRetryStatus,
@@ -1621,6 +1656,7 @@ class _ListeningStatusBar extends StatelessWidget {
     required this.status,
     required this.loading,
     required this.saving,
+    required this.scanHasMore,
     required this.error,
     required this.onTap,
     required this.onRetry,
@@ -1630,6 +1666,7 @@ class _ListeningStatusBar extends StatelessWidget {
   final ListeningStatus? status;
   final bool loading;
   final bool saving;
+  final bool scanHasMore;
   final String? error;
   final VoidCallback onTap;
   final VoidCallback onRetry;
@@ -1642,6 +1679,8 @@ class _ListeningStatusBar extends StatelessWidget {
     final active = hasToken && status != null;
     final busy = loading || saving;
     final showLoadError = hasToken && !busy && status == null && error != null;
+    final showContinueScan =
+        hasToken && !busy && status == null && !showLoadError && scanHasMore;
 
     final String valueLabel;
     if (!hasToken) {
@@ -1652,6 +1691,8 @@ class _ListeningStatusBar extends StatelessWidget {
       valueLabel = l('common.loading');
     } else if (showLoadError) {
       valueLabel = l('status.loadFailed');
+    } else if (showContinueScan) {
+      valueLabel = l('status.continueScan');
     } else if (status != null) {
       valueLabel = l(status!.labelKey);
     } else {

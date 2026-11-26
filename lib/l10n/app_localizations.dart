@@ -160,6 +160,7 @@ const Map<String, String> _zh = {
   'status.loginToMark': '登录后标记',
   'status.saving': '保存中…',
   'status.loadFailed': '状态读取失败',
+  'status.continueScan': '继续查找',
   'status.updated': '已标记为「{status}」',
   'status.timeoutVerify': '请求超时，将在下次保存前先同步服务端状态',
   'status.marked': '想听',
@@ -520,6 +521,7 @@ const Map<String, String> _ja = {
   'status.loginToMark': 'ログインして設定',
   'status.saving': '保存中…',
   'status.loadFailed': 'ステータスの取得に失敗しました',
+  'status.continueScan': '続きを検索',
   'status.updated': '「{status}」に設定しました',
   'status.timeoutVerify': 'タイムアウトしました。次回保存前にサーバー状態を確認します',
   'status.marked': '聴きたい',
@@ -883,6 +885,7 @@ const Map<String, String> _en = {
   'status.loginToMark': 'Sign in to mark',
   'status.saving': 'Saving…',
   'status.loadFailed': 'Could not load status',
+  'status.continueScan': 'Continue search',
   'status.updated': 'Marked as “{status}”',
   'status.timeoutVerify':
       'Request timed out. Status will be synced before the next save',
