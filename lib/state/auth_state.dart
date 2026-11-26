@@ -36,6 +36,16 @@ class AuthState extends ChangeNotifier {
   bool get loggedIn => (_token ?? '').isNotEmpty && _user.loggedIn;
   bool get hasToken => (_token ?? '').isNotEmpty;
   AppUser get user => _user;
+  int get sessionVersion => _sessionVersion;
+
+  /// 区分游客与不同登录账号的会话标识（注销或切换账号时必然变化）。
+  String get accountKey {
+    final t = _token;
+    if (t == null || t.isEmpty) return '';
+    final uid = _user.id ?? '';
+    final uname = _user.name ?? '';
+    return '$_sessionVersion:$uid:$uname:$t';
+  }
   bool get authEnabled => _authEnabled;
   bool get regEnabled => _regEnabled;
   bool get busy => _busy;

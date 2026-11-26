@@ -1,5 +1,31 @@
 import 'common.dart';
 
+/// 作品收听状态（五种互斥标记，对应服务端 `progress` 字段）。
+enum ListeningStatus {
+  marked('marked'),
+  listening('listening'),
+  listened('listened'),
+  replay('replay'),
+  postponed('postponed');
+
+  const ListeningStatus(this.value);
+
+  final String value;
+
+  String get labelKey => 'status.$value';
+
+  String get hintKey => 'status.$value.hint';
+
+  static ListeningStatus? fromApi(String? raw) {
+    final normalized = raw?.trim().toLowerCase();
+    if (normalized == null || normalized.isEmpty) return null;
+    for (final status in values) {
+      if (status.value == normalized) return status;
+    }
+    return null;
+  }
+}
+
 /// 作品评论 / 评分。
 ///
 /// 该接口需要登录，字段在不同版本间略有差异，因此做了宽松解析。
@@ -23,7 +49,7 @@ class Review {
   final int rating;
   final String? text;
 
-  /// 收听进度，例如 `已听完` / `进度 50%`。
+  /// 收听进度（接口原值，例如 `marked` / `listening` / `postponed`）。
   final String? progress;
   final String? createdAt;
   final String? updatedAt;
@@ -31,6 +57,8 @@ class Review {
   final String? userName;
 
   bool get hasText => (text ?? '').trim().isNotEmpty;
+
+  ListeningStatus? get listeningStatus => ListeningStatus.fromApi(progress);
 
   factory Review.fromJson(Map<String, dynamic> json) {
     final user = asMap(json['user']);

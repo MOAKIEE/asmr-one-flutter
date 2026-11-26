@@ -14,11 +14,17 @@ import 'resumable_download.dart';
 
 /// 统一的 API 异常，携带可展示的文案。
 class ApiException implements Exception {
-  ApiException(this.message, {this.statusCode, this.rawError});
+  ApiException(
+    this.message, {
+    this.statusCode,
+    this.rawError,
+    this.isTimeout = false,
+  });
 
   final String message;
   final int? statusCode;
   final String? rawError;
+  final bool isTimeout;
 
   bool get isAuthError =>
       statusCode == 401 ||
@@ -171,6 +177,10 @@ class ApiClient {
   ApiException _mapDioError(DioException e) {
     final rawError = _responseError(e.response?.data);
     final code = e.response?.statusCode;
+    final timeout =
+        e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.sendTimeout ||
+        e.type == DioExceptionType.receiveTimeout;
     final msg =
         _humanize(rawError) ??
         switch (e.type) {
@@ -181,7 +191,12 @@ class ApiClient {
           DioExceptionType.cancel => '请求已取消。',
           _ => '网络异常：${e.message ?? '未知错误'}',
         };
-    return ApiException(msg, statusCode: code, rawError: rawError);
+    return ApiException(
+      msg,
+      statusCode: code,
+      rawError: rawError,
+      isTimeout: timeout,
+    );
   }
 
   String? _responseError(dynamic data) {
@@ -221,6 +236,13 @@ class ApiClient {
     bool auth = true,
   }) => _request('POST', path, body: body, query: query, auth: auth);
 
+  Future<dynamic> _put(
+    String path, {
+    Object? body,
+    Map<String, dynamic>? query,
+    bool auth = true,
+  }) => _request('PUT', path, body: body, query: query, auth: auth);
+
   // ---------------------------------------------------------------------------
   // 作品
   // ---------------------------------------------------------------------------
@@ -249,7 +271,7 @@ class ApiClient {
   }
 
   Future<Work> fetchWork(int id) async {
-    final data = await _get('/api/work/$id');
+    final data = await _get('/api/work/$id', auth: true);
     final map = asMap(data);
     if (map.isEmpty) throw ApiException('作品详情为空，可能已被删除。');
     return Work.fromJson(map);
@@ -257,7 +279,7 @@ class ApiClient {
 
   /// 同名详情接口的备用路径，部分线路只挂了其中一个。
   Future<Work> fetchWorkInfo(int id) async {
-    final data = await _get('/api/workInfo/$id');
+    final data = await _get('/api/workInfo/$id', auth: true);
     final map = asMap(data);
     if (map.isEmpty) throw ApiException('作品详情为空，可能已被删除。');
     return Work.fromJson(map);
@@ -415,6 +437,50 @@ class ApiClient {
         'progress': progress ?? '',
       },
     );
+  }
+
+  /// 单独更新作品收听状态（只传 `work_id` 与 `progress`，保留原有评分与评论正文）。
+  Future<void> updateWorkProgress({
+    required int workId,
+    required ListeningStatus status,
+  }) async {
+    await _put(
+      '/api/review',
+      body: {'work_id': workId, 'progress': status.value},
+      auth: true,
+    );
+  }
+
+  /// 在详情响应缺少 `progress` 字段时，按页查找本人评论以定位收听状态。
+  /// 不会把“仅第 1 页缺失”误判为未标记。
+  Future<ListeningStatus?> fetchMyListeningStatusFromReviews(
+    int workId, {
+    String? userId,
+    String? userName,
+    int pageSize = 20,
+    int maxPages = 10,
+  }) async {
+    final uid = userId?.trim() ?? '';
+    final uname = userName?.trim().toLowerCase() ?? '';
+    if (uid.isEmpty && uname.isEmpty) {
+      throw ApiException('无法确认当前账号身份，请刷新后重试。');
+    }
+    for (var page = 1; page <= maxPages; page++) {
+      final result = await fetchReviews(workId, page: page, pageSize: pageSize);
+      for (final review in result.reviews) {
+        final matchId = uid.isNotEmpty && review.userId?.trim() == uid;
+        final matchName =
+            uname.isNotEmpty &&
+            (review.userName?.trim().toLowerCase() ?? '') == uname;
+        if (matchId || matchName) {
+          return review.listeningStatus;
+        }
+      }
+      if (result.reviews.isEmpty || !result.hasMore) {
+        return null;
+      }
+    }
+    throw ApiException('未能定位当前账号的收听状态，请重试。');
   }
 
   /// 给作品的标签投票（`vote` 为 1 赞 / -1 踩 / 0 取消）。

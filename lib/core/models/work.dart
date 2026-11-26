@@ -1,4 +1,5 @@
 import 'common.dart';
+import 'review.dart';
 
 /// 排序字段（对应接口的 `order` 参数）。
 enum WorkOrder {
@@ -193,6 +194,8 @@ class Work {
     this.thumbnailCoverUrl = '',
     this.userRating,
     this.reviewText,
+    this.progress,
+    this.hasProgressField = false,
   });
 
   final int id;
@@ -230,6 +233,14 @@ class Work {
   /// 当前登录用户对该作品的评分（未登录 / 未评分时为 null）。
   final double? userRating;
   final String? reviewText;
+
+  /// 当前登录用户对该作品的收听状态原值（例如 `marked` / `listening` / `postponed`）。
+  final String? progress;
+
+  /// 响应 JSON 是否显式包含 `progress` 字段（用以区分“已确认未标记”和“接口未下发该字段”）。
+  final bool hasProgressField;
+
+  ListeningStatus? get listeningStatus => ListeningStatus.fromApi(progress);
 
   bool get isFree => price == 0;
 
@@ -278,6 +289,11 @@ class Work {
       thumbnailCoverUrl: asString(json['thumbnailCoverUrl']),
       userRating: asDoubleOrNull(json['userRating']),
       reviewText: asStringOrNull(json['review_text']),
+      progress:
+          asStringOrNull(json['progress']) ??
+          asStringOrNull(json['userProgress']),
+      hasProgressField:
+          json.containsKey('progress') || json.containsKey('userProgress'),
     );
   }
 }

@@ -22,6 +22,7 @@ import '../widgets/app_motion.dart';
 import '../widgets/player_scaffold.dart';
 import '../widgets/common.dart';
 import '../widgets/work_rail.dart';
+import 'login_screen.dart';
 import 'player_screen.dart';
 import 'playlist_screen.dart';
 import 'similar_works_screen.dart';
@@ -55,52 +56,358 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   bool _loadingTracks = true;
   bool _loadingReviews = false;
 
+  ListeningStatus? _listeningStatus;
+  bool _statusConfirmed = false;
+  bool _loadingStatus = false;
+  bool _savingStatus = false;
+  bool _statusNeedsReconcile = false;
+  String? _statusError;
+  int _statusGeneration = 0;
+  String? _observedAccountKey;
+
   String? _detailError;
   String? _trackError;
 
-  late final ApiClient _api = widget.api ?? ApiClient.instance;
+  ApiClient get _api => widget.api ?? ApiClient.instance;
 
   @override
   void initState() {
     super.initState();
-    _loadDetail();
     _loadTracks();
   }
 
-  Future<void> _loadDetail() async {
-    setState(() {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = Provider.of<AuthState>(context);
+    final nextKey = auth.accountKey;
+    if (_observedAccountKey == null) {
+      _observedAccountKey = nextKey;
       _loadingDetail = true;
       _detailError = null;
-    });
+      if (auth.hasToken) {
+        _loadingStatus = true;
+        _statusError = null;
+      }
+      _loadDetail(auth: auth, emitInitialState: false);
+      return;
+    }
+    if (_observedAccountKey != nextKey) {
+      _observedAccountKey = nextKey;
+      _resetAccountBoundState();
+      if (auth.hasToken) {
+        _loadingDetail = true;
+        _detailError = null;
+        _loadingStatus = true;
+        _statusError = null;
+        _loadDetail(auth: auth, emitInitialState: false);
+      }
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant WorkDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.work.id != widget.work.id) {
+      _work = widget.work;
+      _tracks = const [];
+      _flatTracks = const [];
+      _detailError = null;
+      _trackError = null;
+      _resetAccountBoundState();
+      _loadTracks();
+      _loadDetail(auth: context.read<AuthState>());
+    }
+  }
+
+  void _resetAccountBoundState() {
+    _statusGeneration++;
+    _listeningStatus = null;
+    _statusConfirmed = false;
+    _loadingStatus = false;
+    _savingStatus = false;
+    _statusNeedsReconcile = false;
+    _statusError = null;
+    _reviews = ReviewPage.empty;
+    _loadingReviews = false;
+  }
+
+  bool _isStatusScopeValid(int workId, String accountKey, int generation) =>
+      mounted &&
+      _work.id == workId &&
+      _observedAccountKey == accountKey &&
+      _statusGeneration == generation;
+
+  Future<void> _loadDetail({
+    AuthState? auth,
+    bool emitInitialState = true,
+  }) async {
+    final activeAuth = auth ?? context.read<AuthState>();
+    final workId = _work.id;
+    final accountKey = activeAuth.accountKey;
+    final hasToken = activeAuth.hasToken;
+    final generation = ++_statusGeneration;
+
+    if (emitInitialState) {
+      setState(() {
+        _loadingDetail = true;
+        _detailError = null;
+        if (hasToken) {
+          _loadingStatus = true;
+          _statusError = null;
+        }
+      });
+    }
     try {
-      final full = await _api.fetchWork(_work.id);
-      if (!mounted) return;
+      final full = await _api.fetchWork(workId);
+      if (!_isStatusScopeValid(workId, accountKey, generation)) return;
       setState(() {
         _work = full;
         _loadingDetail = false;
+        if (hasToken && full.hasProgressField) {
+          _listeningStatus = full.listeningStatus;
+          _statusConfirmed = true;
+          _loadingStatus = false;
+          _statusError = null;
+          _statusNeedsReconcile = false;
+        } else if (!hasToken) {
+          _listeningStatus = null;
+          _statusConfirmed = false;
+          _loadingStatus = false;
+          _statusError = null;
+        }
       });
-      // 有完整信息后再尝试拉评论。
-      _loadReviews();
+      if (hasToken) {
+        if (!full.hasProgressField) {
+          _resolveStatusFromReviews(workId, activeAuth, accountKey, generation);
+        }
+        _loadReviews(workId: workId, accountKey: accountKey);
+      }
     } catch (e) {
       // 列表页已经带了基础信息，详情失败时降级展示而不是白屏。
-      if (!mounted) return;
+      if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+      final message = e is ApiException ? e.message : '$e';
       setState(() {
         _loadingDetail = false;
-        _detailError = e is ApiException ? e.message : '$e';
+        _detailError = message;
+        if (hasToken) {
+          _loadingStatus = false;
+          _statusError = message;
+        }
       });
     }
   }
 
+  Future<void> _resolveStatusFromReviews(
+    int workId,
+    AuthState auth,
+    String accountKey,
+    int generation,
+  ) async {
+    try {
+      final resolved = await _api.fetchMyListeningStatusFromReviews(
+        workId,
+        userId: auth.user.id,
+        userName: auth.user.name,
+      );
+      if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+      setState(() {
+        _listeningStatus = resolved;
+        _statusConfirmed = true;
+        _loadingStatus = false;
+        _statusError = null;
+        _statusNeedsReconcile = false;
+      });
+    } catch (e) {
+      if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+      setState(() {
+        _loadingStatus = false;
+        _statusError = e is ApiException ? e.message : '$e';
+      });
+    }
+  }
+
+  Future<({Work? work, ListeningStatus? status})> _readRemoteStatus(
+    int workId,
+    AuthState auth,
+  ) async {
+    final full = await _api.fetchWork(workId);
+    if (full.hasProgressField) {
+      return (work: full, status: full.listeningStatus);
+    }
+    final fromReviews = await _api.fetchMyListeningStatusFromReviews(
+      workId,
+      userId: auth.user.id,
+      userName: auth.user.name,
+    );
+    return (work: full, status: fromReviews);
+  }
+
+  Future<void> _retryLoadStatus() async {
+    final auth = context.read<AuthState>();
+    if (!auth.hasToken || _savingStatus) return;
+    final workId = _work.id;
+    final accountKey = auth.accountKey;
+    final generation = ++_statusGeneration;
+    setState(() {
+      _loadingStatus = true;
+      _statusError = null;
+    });
+    try {
+      final res = await _readRemoteStatus(workId, auth);
+      if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+      setState(() {
+        if (res.work != null) _work = res.work!;
+        _listeningStatus = res.status;
+        _statusConfirmed = true;
+        _loadingStatus = false;
+        _statusError = null;
+        _statusNeedsReconcile = false;
+      });
+    } catch (e) {
+      if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+      setState(() {
+        _loadingStatus = false;
+        _statusError = e is ApiException ? e.message : '$e';
+      });
+    }
+  }
+
+  Future<void> _openStatusPicker() async {
+    final auth = context.read<AuthState>();
+    if (!auth.hasToken) {
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
+      return;
+    }
+    if (_savingStatus || _loadingStatus) return;
+    if (_statusError != null && !_statusConfirmed) {
+      await _retryLoadStatus();
+      return;
+    }
+    final picked = await showModalBottomSheet<ListeningStatus>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      constraints: const BoxConstraints(maxWidth: 560),
+      builder: (sheetContext) => _ListeningStatusSheet(
+        current: _statusConfirmed ? _listeningStatus : null,
+      ),
+    );
+    if (!mounted || picked == null) return;
+    await _saveListeningStatus(picked);
+  }
+
+  Future<void> _saveListeningStatus(ListeningStatus target) async {
+    final auth = context.read<AuthState>();
+    if (!auth.hasToken || _savingStatus) return;
+    final l = L10n.of(context);
+    final updatedLabel = l('status.updated', {'status': l(target.labelKey)});
+    final timeoutVerifyLabel = l('status.timeoutVerify');
+
+    final workId = _work.id;
+    final accountKey = auth.accountKey;
+    final generation = ++_statusGeneration;
+
+    setState(() {
+      _savingStatus = true;
+      _statusError = null;
+    });
+
+    // 若上次写入超时，再次提交前先读回服务端状态，避免盲目重复写入。
+    if (_statusNeedsReconcile) {
+      try {
+        final synced = await _readRemoteStatus(workId, auth);
+        if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+        setState(() {
+          if (synced.work != null) _work = synced.work!;
+          _listeningStatus = synced.status;
+          _statusConfirmed = true;
+          _statusNeedsReconcile = false;
+        });
+        if (synced.status == target) {
+          setState(() => _savingStatus = false);
+          _toast(updatedLabel);
+          return;
+        }
+      } catch (e) {
+        if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+        final message = e is ApiException ? e.message : '$e';
+        setState(() {
+          _savingStatus = false;
+          _statusError = message;
+        });
+        _toast(message);
+        return;
+      }
+    }
+
+    try {
+      await _api.updateWorkProgress(workId: workId, status: target);
+      if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+      setState(() {
+        _listeningStatus = target;
+        _statusConfirmed = true;
+        _statusNeedsReconcile = false;
+        _savingStatus = false;
+        _statusError = null;
+      });
+      _toast(updatedLabel);
+    } on ApiException catch (e) {
+      if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+      if (e.isTimeout) {
+        // 超时可能发生在服务端已写入之后，先尝试读回一次以核实结果。
+        _statusNeedsReconcile = true;
+        try {
+          final synced = await _readRemoteStatus(workId, auth);
+          if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+          setState(() {
+            if (synced.work != null) _work = synced.work!;
+            _listeningStatus = synced.status;
+            _statusConfirmed = true;
+            _statusNeedsReconcile = false;
+            _savingStatus = false;
+            _statusError = null;
+          });
+          _toast(synced.status == target ? updatedLabel : e.message);
+        } catch (_) {
+          if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+          setState(() {
+            _savingStatus = false;
+            _statusError = e.message;
+          });
+          _toast(timeoutVerifyLabel);
+        }
+      } else {
+        setState(() {
+          _savingStatus = false;
+          _statusError = e.message;
+        });
+        _toast(e.message);
+      }
+    } catch (e) {
+      if (!_isStatusScopeValid(workId, accountKey, generation)) return;
+      final message = '$e';
+      setState(() {
+        _savingStatus = false;
+        _statusError = message;
+      });
+      _toast(message);
+    }
+  }
+
   Future<void> _loadTracks() async {
+    final workId = _work.id;
     setState(() {
       _loadingTracks = true;
       _trackError = null;
     });
     try {
-      final nodes = await _api.fetchTracks(_work.id);
-      if (!mounted) return;
+      final nodes = await _api.fetchTracks(workId);
+      if (!mounted || _work.id != workId) return;
       try {
-        context.read<ListeningNotes>().cacheTrackTree(_work.id, nodes);
+        context.read<ListeningNotes>().cacheTrackTree(workId, nodes);
       } on ProviderNotFoundException {
         // Standalone detail widget tests may omit app-level ListeningNotes.
       }
@@ -110,7 +417,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
         _loadingTracks = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || _work.id != workId) return;
       setState(() {
         _loadingTracks = false;
         _trackError = e is ApiException ? e.message : '$e';
@@ -118,18 +425,29 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     }
   }
 
-  Future<void> _loadReviews() async {
-    if (!context.read<AuthState>().hasToken) return;
+  Future<void> _loadReviews({int? workId, String? accountKey}) async {
+    final auth = context.read<AuthState>();
+    if (!auth.hasToken) return;
+    final targetWorkId = workId ?? _work.id;
+    final targetAccount = accountKey ?? auth.accountKey;
     setState(() => _loadingReviews = true);
     try {
-      final page = await _api.fetchReviews(_work.id, pageSize: 10);
-      if (!mounted) return;
+      final page = await _api.fetchReviews(targetWorkId, pageSize: 10);
+      if (!mounted ||
+          _work.id != targetWorkId ||
+          _observedAccountKey != targetAccount) {
+        return;
+      }
       setState(() {
         _reviews = page;
         _loadingReviews = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _loadingReviews = false);
+      if (mounted &&
+          _work.id == targetWorkId &&
+          _observedAccountKey == targetAccount) {
+        setState(() => _loadingReviews = false);
+      }
     }
   }
 
@@ -295,11 +613,18 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
               trackCount: _flatTracks.length,
               activeDownloads: activeTasks,
               trackLoading: _loadingTracks,
+              hasToken: context.watch<AuthState>().hasToken,
+              listeningStatus: _statusConfirmed ? _listeningStatus : null,
+              statusLoading: _loadingStatus,
+              statusSaving: _savingStatus,
+              statusError: _statusError,
               onPlay: () => _playAll(),
               onShuffle: () => _playAll(shuffle: true),
               onFavorite: _toggleFavorite,
               onPlaylist: () => showAddToPlaylistSheet(context, _work),
               onDownload: _download,
+              onListeningStatus: _openStatusPicker,
+              onRetryStatus: _retryLoadStatus,
             ),
           ),
           if (_work.tags.isNotEmpty)
@@ -504,11 +829,18 @@ class _HeaderCard extends StatelessWidget {
     required this.trackCount,
     required this.activeDownloads,
     required this.trackLoading,
+    required this.hasToken,
+    required this.listeningStatus,
+    required this.statusLoading,
+    required this.statusSaving,
+    required this.statusError,
     required this.onPlay,
     required this.onShuffle,
     required this.onFavorite,
     required this.onPlaylist,
     required this.onDownload,
+    required this.onListeningStatus,
+    required this.onRetryStatus,
   });
 
   final Work work;
@@ -518,11 +850,18 @@ class _HeaderCard extends StatelessWidget {
   final int trackCount;
   final int activeDownloads;
   final bool trackLoading;
+  final bool hasToken;
+  final ListeningStatus? listeningStatus;
+  final bool statusLoading;
+  final bool statusSaving;
+  final String? statusError;
   final VoidCallback onPlay;
   final VoidCallback onShuffle;
   final VoidCallback onFavorite;
   final VoidCallback onPlaylist;
   final VoidCallback onDownload;
+  final VoidCallback onListeningStatus;
+  final VoidCallback onRetryStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -719,6 +1058,16 @@ class _HeaderCard extends StatelessWidget {
                 onTap: onDownload,
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          _ListeningStatusBar(
+            hasToken: hasToken,
+            status: listeningStatus,
+            loading: statusLoading,
+            saving: statusSaving,
+            error: statusError,
+            onTap: onListeningStatus,
+            onRetry: onRetryStatus,
           ),
           const SizedBox(height: 6),
           if (loading)
@@ -1200,6 +1549,27 @@ class _ReviewList extends StatelessWidget {
                 Row(
                   children: [
                     RatingBadge(rating: r.rating.toDouble()),
+                    if (r.listeningStatus != null) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          l(r.listeningStatus!.labelKey),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: scheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1231,6 +1601,183 @@ class _ReviewList extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+IconData _statusIcon(ListeningStatus? status) => switch (status) {
+  ListeningStatus.marked => Icons.bookmark_border_rounded,
+  ListeningStatus.listening => Icons.headphones_rounded,
+  ListeningStatus.listened => Icons.check_circle_outline_rounded,
+  ListeningStatus.replay => Icons.replay_rounded,
+  ListeningStatus.postponed => Icons.pause_circle_outline_rounded,
+  null => Icons.bookmark_add_outlined,
+};
+
+/// 作品收听状态入口条（区分游客、加载、读取失败、保存中与已确认标记）。
+class _ListeningStatusBar extends StatelessWidget {
+  const _ListeningStatusBar({
+    required this.hasToken,
+    required this.status,
+    required this.loading,
+    required this.saving,
+    required this.error,
+    required this.onTap,
+    required this.onRetry,
+  });
+
+  final bool hasToken;
+  final ListeningStatus? status;
+  final bool loading;
+  final bool saving;
+  final String? error;
+  final VoidCallback onTap;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L10n.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final active = hasToken && status != null;
+    final busy = loading || saving;
+    final showLoadError = hasToken && !busy && status == null && error != null;
+
+    final String valueLabel;
+    if (!hasToken) {
+      valueLabel = l('status.loginToMark');
+    } else if (saving) {
+      valueLabel = l('status.saving');
+    } else if (loading) {
+      valueLabel = l('common.loading');
+    } else if (showLoadError) {
+      valueLabel = l('status.loadFailed');
+    } else if (status != null) {
+      valueLabel = l(status!.labelKey);
+    } else {
+      valueLabel = l('status.unset');
+    }
+
+    final accent = active
+        ? scheme.primary
+        : (showLoadError ? scheme.error : scheme.onSurfaceVariant);
+
+    return Material(
+      color: active
+          ? scheme.primary.withValues(alpha: 0.12)
+          : scheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: active
+              ? scheme.primary.withValues(alpha: 0.4)
+              : (showLoadError
+                    ? scheme.error.withValues(alpha: 0.45)
+                    : scheme.outlineVariant.withValues(alpha: 0.45)),
+        ),
+      ),
+      child: InkWell(
+        onTap: busy ? null : (showLoadError ? onRetry : onTap),
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          child: Row(
+            children: [
+              Icon(_statusIcon(hasToken ? status : null), size: 19, color: accent),
+              const SizedBox(width: 10),
+              Text(
+                l('status.title'),
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurface,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  valueLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: accent,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (busy)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else if (showLoadError)
+                Icon(Icons.refresh_rounded, size: 18, color: scheme.error)
+              else
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: scheme.onSurfaceVariant,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 五种互斥收听状态选择器面板。
+class _ListeningStatusSheet extends StatelessWidget {
+  const _ListeningStatusSheet({required this.current});
+
+  final ListeningStatus? current;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L10n.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+              child: Text(l('status.title'), style: theme.textTheme.titleMedium),
+            ),
+            for (final status in ListeningStatus.values)
+              ListTile(
+                leading: Icon(
+                  _statusIcon(status),
+                  color: current == status
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                ),
+                title: Text(
+                  l(status.labelKey),
+                  style: current == status
+                      ? TextStyle(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w700,
+                        )
+                      : null,
+                ),
+                subtitle: Text(l(status.hintKey)),
+                trailing: Icon(
+                  current == status
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: current == status ? scheme.primary : null,
+                ),
+                onTap: () => Navigator.of(context).pop(status),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
     );
   }
 }
