@@ -5,7 +5,7 @@ class AppInfo {
   const AppInfo._();
 
   /// 平台插件不可用时的版本回退值（与 pubspec.yaml 保持同步）。
-  static const String fallbackVersion = '1.3.0';
+  static const String fallbackVersion = '1.4.0';
 
   static const String repoOwner = 'MOAKIEE';
   static const String repoName = 'mimori';
