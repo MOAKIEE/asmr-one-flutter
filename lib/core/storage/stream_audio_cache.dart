@@ -212,7 +212,10 @@ class StreamAudioCache extends ChangeNotifier {
     }
   }
 
-  /// 按播放源优先级返回本地完整缓存文件或本地代理 URI；初始化失败时返回 `null` 由调用方降级在线播放。
+  /// 返回绑定到当前缓存键与上游地址的本地回环代理 URI；初始化失败时返回 `null` 由调用方降级在线播放。
+  ///
+  /// 缓存命中检查推迟到实际读取音轨时在代理入口执行：即使队列中尚未播放的后续曲目
+  /// 在等待期间被手动清理或容量回收，切歌时仍可无缝回源上游播放，避免 `PathNotFoundException`。
   Future<Uri?> resolvePlayableUri({
     required AudioCacheKey key,
     required Uri remoteUri,
@@ -221,12 +224,6 @@ class StreamAudioCache extends ChangeNotifier {
   }) async {
     try {
       await _ensureDir();
-      final existing = await lookupComplete(key);
-      if (existing != null) {
-        cacheHitRequests++;
-        cacheHitBytes += await existing.length();
-        return Uri.file(existing.path);
-      }
       final server = await _ensureServer();
       final routeId = '${++_routeSeq}_${key.id.substring(0, 12)}';
       _routes[routeId] = _ProxyTarget(
@@ -372,7 +369,8 @@ class StreamAudioCache extends ChangeNotifier {
       await request.response.close();
       return;
     }
-    final target = _routes[segments[1]];
+    final routeId = segments[1];
+    final target = _routes[routeId];
     if (target == null) {
       request.response.statusCode = HttpStatus.notFound;
       await request.response.close();
@@ -380,18 +378,25 @@ class StreamAudioCache extends ChangeNotifier {
     }
 
     try {
-      // 若期间已经完成缓存，直接走本地完整文件响应（支持 Range）。
-      final cached = await lookupComplete(target.key);
-      if (cached != null) {
-        await _serveLocalFile(request, cached, target.key.id);
-        return;
+      // 在活跃保护下检查本地完整缓存：命中直接响应（支持 Range），未命中或已被清理则无缝回源上游。
+      markActive(target.key.id);
+      var servedFromCache = false;
+      try {
+        final cached = await lookupComplete(target.key);
+        if (cached != null) {
+          servedFromCache = true;
+          await _serveLocalFile(request, cached, target.key.id);
+          return;
+        }
+      } finally {
+        releaseActive(target.key.id, triggerEviction: servedFromCache);
       }
 
       final rangeHeader = request.headers.value(HttpHeaders.rangeHeader);
       final isFullStreamCandidate = _isFullRange(rangeHeader);
 
       if (isFullStreamCandidate) {
-        await _proxyAndCacheFull(request, target, rangeHeader);
+        await _proxyAndCacheFull(request, routeId, target, rangeHeader);
       } else {
         await _proxyRangePassThrough(request, target, rangeHeader);
       }
@@ -414,54 +419,49 @@ class StreamAudioCache extends ChangeNotifier {
     File file,
     String keyId,
   ) async {
-    markActive(keyId);
-    try {
-      final length = await file.length();
-      final dir = await _ensureDir();
-      final meta = await _readValidEntry(dir, keyId);
-      final contentType = meta?.contentType ?? 'audio/mpeg';
-      final rangeHeader = request.headers.value(HttpHeaders.rangeHeader);
-      request.response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
-      request.response.headers.set(HttpHeaders.contentTypeHeader, contentType);
+    final length = await file.length();
+    final dir = await _ensureDir();
+    final meta = await _readValidEntry(dir, keyId);
+    final contentType = meta?.contentType ?? 'audio/mpeg';
+    final rangeHeader = request.headers.value(HttpHeaders.rangeHeader);
+    request.response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
+    request.response.headers.set(HttpHeaders.contentTypeHeader, contentType);
 
-      if (rangeHeader != null && rangeHeader.startsWith('bytes=')) {
-        final spec = rangeHeader.substring('bytes='.length).split(',').first;
-        final parts = spec.split('-');
-        final start = int.tryParse(parts[0].trim()) ?? 0;
-        final end = parts.length > 1 && parts[1].trim().isNotEmpty
-            ? (int.tryParse(parts[1].trim()) ?? (length - 1))
-            : (length - 1);
-        if (start < 0 || start >= length || end < start) {
-          request.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
-          request.response.headers.set(
-            HttpHeaders.contentRangeHeader,
-            'bytes */$length',
-          );
-          await request.response.close();
-          return;
-        }
-        final clampedEnd = end >= length ? length - 1 : end;
-        final chunkLen = clampedEnd - start + 1;
-        request.response.statusCode = HttpStatus.partialContent;
+    if (rangeHeader != null && rangeHeader.startsWith('bytes=')) {
+      final spec = rangeHeader.substring('bytes='.length).split(',').first;
+      final parts = spec.split('-');
+      final start = int.tryParse(parts[0].trim()) ?? 0;
+      final end = parts.length > 1 && parts[1].trim().isNotEmpty
+          ? (int.tryParse(parts[1].trim()) ?? (length - 1))
+          : (length - 1);
+      if (start < 0 || start >= length || end < start) {
+        request.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
         request.response.headers.set(
           HttpHeaders.contentRangeHeader,
-          'bytes $start-$clampedEnd/$length',
+          'bytes */$length',
         );
-        request.response.contentLength = chunkLen;
-        cacheHitRequests++;
-        cacheHitBytes += chunkLen;
-        await request.response.addStream(file.openRead(start, clampedEnd + 1));
         await request.response.close();
-      } else {
-        request.response.statusCode = HttpStatus.ok;
-        request.response.contentLength = length;
-        cacheHitRequests++;
-        cacheHitBytes += length;
-        await request.response.addStream(file.openRead());
-        await request.response.close();
+        return;
       }
-    } finally {
-      releaseActive(keyId);
+      final clampedEnd = end >= length ? length - 1 : end;
+      final chunkLen = clampedEnd - start + 1;
+      request.response.statusCode = HttpStatus.partialContent;
+      request.response.headers.set(
+        HttpHeaders.contentRangeHeader,
+        'bytes $start-$clampedEnd/$length',
+      );
+      request.response.contentLength = chunkLen;
+      cacheHitRequests++;
+      cacheHitBytes += chunkLen;
+      await request.response.addStream(file.openRead(start, clampedEnd + 1));
+      await request.response.close();
+    } else {
+      request.response.statusCode = HttpStatus.ok;
+      request.response.contentLength = length;
+      cacheHitRequests++;
+      cacheHitBytes += length;
+      await request.response.addStream(file.openRead());
+      await request.response.close();
     }
   }
 
@@ -500,6 +500,7 @@ class StreamAudioCache extends ChangeNotifier {
 
   Future<void> _proxyAndCacheFull(
     HttpRequest request,
+    String routeId,
     _ProxyTarget target,
     String? rangeHeader,
   ) async {
@@ -571,7 +572,9 @@ class StreamAudioCache extends ChangeNotifier {
       final cacheDir = dir;
       final partFile = part;
       if (holdsWriter && cacheDir != null && partFile != null) {
+        final routeStillValid = _routes.containsKey(routeId);
         final complete =
+            routeStillValid &&
             !writeFailed &&
             received > 0 &&
             (expectedLength < 0 || received == expectedLength);

@@ -94,6 +94,57 @@ void main() {
     expect(api.tagCalls, 0);
   });
 
+  test(
+    'anonymous bootstrap with authEnabled clears persisted cache scope and notifies player, while offline startup preserves it',
+    () async {
+      // 1. Offline failure keeps persisted accountScope and does not trigger onTokenChanged.
+      SharedPreferences.setMockInitialValues({
+        'auth.token': 'saved-token',
+        'auth.accountScope': 'uid:A',
+      });
+      final offlinePrefs = await AppPrefs.load();
+      var offlineCallbacks = 0;
+      final offlineApi = SessionApi()..error = ApiException('offline');
+      final offlineAuth = AuthState(
+        offlinePrefs,
+        api: offlineApi,
+        onTokenChanged: () async => offlineCallbacks++,
+      );
+      addTearDown(offlineAuth.dispose);
+
+      await offlineAuth.bootstrap();
+      expect(offlineAuth.cacheAccountScope, 'uid:A');
+      expect(offlinePrefs.accountScope, 'uid:A');
+      expect(offlineCallbacks, 0);
+
+      // 2. Server explicitly returns loggedIn=false with authEnabled=true -> clears uid:A and notifies player.
+      SharedPreferences.setMockInitialValues({
+        'auth.token': 'saved-token',
+        'auth.accountScope': 'uid:A',
+      });
+      final anonPrefs = await AppPrefs.load();
+      var anonCallbacks = 0;
+      final anonApi = SessionApi()
+        ..session = const SessionInfo(
+          user: AppUser.anonymous,
+          authEnabled: true,
+          regEnabled: true,
+        );
+      final anonAuth = AuthState(
+        anonPrefs,
+        api: anonApi,
+        onTokenChanged: () async => anonCallbacks++,
+      );
+      addTearDown(anonAuth.dispose);
+
+      await anonAuth.bootstrap();
+      expect(anonAuth.loggedIn, isFalse);
+      expect(anonAuth.cacheAccountScope, isNull);
+      expect(anonPrefs.accountScope, isNull);
+      expect(anonCallbacks, 1);
+    },
+  );
+
   test('rejected session leaves a signed-out user without credentials', () async {
     await auth.logout();
     api.error = ApiException('expired', statusCode: 401);

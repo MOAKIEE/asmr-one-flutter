@@ -71,6 +71,7 @@ class PlayerState extends ChangeNotifier {
        _accountScope = accountScope,
        _player = audioPlayer ?? ja.AudioPlayer() {
     _autoPlayNext = settings.autoPlayNext;
+    _streamCacheEnabled = settings.streamCacheEnabled;
     _settings.addListener(_settingsChanged);
     _player.setSpeed(settings.playbackSpeed);
     _bind();
@@ -287,6 +288,7 @@ class PlayerState extends ChangeNotifier {
   }
 
   late bool _autoPlayNext;
+  late bool _streamCacheEnabled;
   bool _singleSource = false;
   bool _changingSources = false;
   ja.LoopMode _loopMode = ja.LoopMode.off;
@@ -417,15 +419,34 @@ class PlayerState extends ChangeNotifier {
   }
 
   void _settingsChanged() {
-    if (_autoPlayNext == _settings.autoPlayNext) return;
+    final autoPlayChanged = _autoPlayNext != _settings.autoPlayNext;
+    final cacheToggleChanged =
+        _streamCacheEnabled != _settings.streamCacheEnabled;
+    if (!autoPlayChanged && !cacheToggleChanged) return;
     _autoPlayNext = _settings.autoPlayNext;
-    if (_queue.isNotEmpty) unawaited(_reloadPlaybackMode());
+    _streamCacheEnabled = _settings.streamCacheEnabled;
+    if (_queue.isEmpty) return;
+    if (autoPlayChanged) {
+      unawaited(_reloadPlaybackMode());
+    } else if (cacheToggleChanged && _audioCache != null) {
+      final hasOnlineItem = _queue.any(
+        (item) => !item.isLocal && item.url.isNotEmpty,
+      );
+      if (_hasAppliedCacheRoutes || (_streamCacheEnabled && hasOnlineItem)) {
+        unawaited(_reloadPlaybackMode(resetPlatform: true));
+      }
+    }
   }
 
-  Future<void> _reloadPlaybackMode() async {
+  Future<void> _reloadPlaybackMode({bool resetPlatform = false}) async {
     final wasPlaying = playing;
     try {
-      final loaded = await _setSources(_queue, _currentIndex, _player.position);
+      final loaded = await _setSources(
+        _queue,
+        _currentIndex,
+        _player.position,
+        resetPlatform: resetPlatform,
+      );
       if (loaded && wasPlaying) unawaited(_player.play());
     } catch (e) {
       _error = '更新播放模式失败：$e';
@@ -448,7 +469,10 @@ class PlayerState extends ChangeNotifier {
       _shuffleSingleQueue(index);
     }
     _currentIndex = index;
-    final nextRouteGroup = _audioCache?.createRouteGroup();
+    final cacheScope = _desiredCacheScope();
+    final nextRouteGroup = cacheScope != null
+        ? _audioCache?.createRouteGroup()
+        : null;
     try {
       if (resetPlatform) {
         await _player.stop();
@@ -456,6 +480,11 @@ class PlayerState extends ChangeNotifier {
           _audioCache?.releaseRouteGroup(nextRouteGroup);
           return false;
         }
+        // 账号/缓存配置重置时立即撤销旧代理路由，避免旧路由在重建期间继续写入旧账号缓存。
+        final staleRouteGroup = _activeRouteGroupId;
+        _activeRouteGroupId = null;
+        _setActivePlayingCacheKey(null);
+        _audioCache?.releaseRouteGroup(staleRouteGroup);
       }
       await _player.setLoopMode(
         _stopAfterTrack || (_singleSource && _loopMode == ja.LoopMode.all)
@@ -468,7 +497,6 @@ class PlayerState extends ChangeNotifier {
       }
       final ids = _mediaIds(items);
       final token = _api.token ?? '';
-      final cacheScope = _currentAccountScope();
       final targetIndices = _singleSource
           ? [index]
           : List.generate(items.length, (i) => i);
@@ -507,13 +535,17 @@ class PlayerState extends ChangeNotifier {
         _audioCache?.releaseRouteGroup(nextRouteGroup);
         return false;
       }
+      final hasCachedRoutes = nextQueueCacheKeys.isNotEmpty;
+      if (!hasCachedRoutes && nextRouteGroup != null) {
+        _audioCache?.releaseRouteGroup(nextRouteGroup);
+      }
       final prevRouteGroup = _activeRouteGroupId;
-      _activeRouteGroupId = nextRouteGroup;
+      _activeRouteGroupId = hasCachedRoutes ? nextRouteGroup : null;
       _queueCacheKeys = nextQueueCacheKeys;
       _setActivePlayingCacheKey(_queueCacheKeys[index]);
       _audioCache?.releaseRouteGroup(prevRouteGroup);
       _appliedMediaToken = nextMediaToken;
-      _appliedCacheScope = cacheScope;
+      _appliedCacheScope = hasCachedRoutes ? cacheScope : null;
     } catch (_) {
       _audioCache?.releaseRouteGroup(nextRouteGroup);
       if (version == _sourceVersion) rethrow;
@@ -805,6 +837,16 @@ class PlayerState extends ChangeNotifier {
   String? _currentAccountScope() =>
       _accountScope != null ? _accountScope() : (_api.hasToken ? null : 'guest');
 
+  String? _desiredCacheScope() =>
+      (_settings.streamCacheEnabled && _audioCache != null)
+      ? _currentAccountScope()
+      : null;
+
+  bool get _hasAppliedCacheRoutes =>
+      _queueCacheKeys.isNotEmpty ||
+      _activeRouteGroupId != null ||
+      _appliedCacheScope != null;
+
   void _setActivePlayingCacheKey(String? nextKey) {
     final cache = _audioCache;
     if (cache == null || _activePlayingCacheKey == nextKey) return;
@@ -1053,15 +1095,17 @@ class PlayerState extends ChangeNotifier {
   /// 账号令牌或缓存账号身份变更后撤下旧媒体源，并用当前身份重新配置音频引擎。
   Future<void> refreshTokens() async {
     final token = _api.token ?? '';
-    final scope = _currentAccountScope();
     final item = currentItem;
     if (_disposed || item == null) return;
     final tokenChanged =
         _appliedMediaToken != null && _appliedMediaToken != token;
+    final desiredCacheScope = _desiredCacheScope();
+    final hasOnlineItem = _queue.any((e) => !e.isLocal && e.url.isNotEmpty);
     final scopeChanged =
-        _settings.streamCacheEnabled &&
         _audioCache != null &&
-        _appliedCacheScope != scope;
+        (_hasAppliedCacheRoutes
+            ? _appliedCacheScope != desiredCacheScope
+            : (desiredCacheScope != null && hasOnlineItem));
     if (!tokenChanged && !scopeChanged) {
       return;
     }

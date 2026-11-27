@@ -108,13 +108,10 @@ class AuthState extends ChangeNotifier {
           userId: _user.id,
           userName: _user.name,
         );
-      } else if (!session.authEnabled && hasToken) {
-        // 服务端关闭了登录，本地令牌已无意义。
+      } else {
+        // 服务端已明确确认当前会话为匿名，清除旧账号的缓存身份并触发播放器重新配置音源。
         _user = AppUser.anonymous;
         _prefs.accountScope = null;
-      } else {
-        _user = AppUser.anonymous;
-        if (!hasToken) _prefs.accountScope = null;
       }
     } on ApiException catch (e) {
       if (version != _sessionVersion) return;

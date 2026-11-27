@@ -155,13 +155,14 @@ void main() {
       expect(onFirstBytes, payload.length);
       expect(await cache.refreshStats(), payload.length);
 
-      // Replay: hits local complete file -> 0 upstream bytes!
+      // Replay: stays on loopback proxy URI and serves local complete file with 0 upstream bytes!
       final secondUri = await cache.resolvePlayableUri(
         key: key,
         remoteUri: server.uri,
       );
       expect(secondUri, isNotNull);
-      expect(secondUri!.scheme, 'file');
+      expect(secondUri!.scheme, 'http');
+      expect(secondUri.host, '127.0.0.1');
       final onPlay2 = await _readAll(secondUri);
       final onReplayBytes = server.bytesServed - onFirstBytes;
       expect(onPlay2, payload);
@@ -530,15 +531,18 @@ void main() {
         readSession: (_) async => savedSession(),
       );
       await coldPlayerA.restoreSession();
-      expect(
-        (coldAudioA.sources.single as ja.UriAudioSource).uri.scheme,
-        'file',
-      );
+      final uriA = (coldAudioA.sources.single as ja.UriAudioSource).uri;
+      expect(uriA.scheme, 'http');
+      expect(uriA.host, '127.0.0.1');
+      server.resetCounts();
+      expect(await _readAll(uriA), payload);
+      expect(server.requestCount, 0);
+      expect(server.bytesServed, 0);
       coldPlayerA.dispose();
       coldAuthA.dispose();
       coldSettingsA.dispose();
 
-      // 3. Cold start Account B -> must NOT hit Account A's file (gets proxy for uid:u-bob).
+      // 3. Cold start Account B -> must NOT hit Account A's file (gets proxy for uid:u-bob and hits upstream).
       SharedPreferences.setMockInitialValues({
         'auth.token': 'tok-bob',
         'auth.accountScope': 'uid:u-bob',
@@ -560,6 +564,10 @@ void main() {
       final uriB = (coldAudioB.sources.single as ja.UriAudioSource).uri;
       expect(uriB.scheme, 'http');
       expect(uriB.host, '127.0.0.1');
+      server.resetCounts();
+      expect(await _readAll(uriB), payload);
+      expect(server.requestCount, 1);
+      expect(server.bytesServed, payload.length);
       coldPlayerB.dispose();
       coldAuthB.dispose();
       coldSettingsB.dispose();
@@ -812,15 +820,391 @@ void main() {
       final bytes1 = await f1;
       expect(bytes1, expected);
 
-      // Cache file is intact and next replay hits local file with 0 upstream requests!
+      // Cache file is intact and next replay hits local cache via proxy with 0 upstream requests!
       final hitsBeforeReplay = upstreamHits;
       final replayUri = await cache.resolvePlayableUri(
         key: key,
         remoteUri: upstreamUri,
       );
-      expect(replayUri?.scheme, 'file');
+      expect(replayUri?.scheme, 'http');
+      expect(replayUri?.host, '127.0.0.1');
       expect(await _readAll(replayUri!), expected);
       expect(upstreamHits, hitsBeforeReplay);
+    },
+  );
+
+  test(
+    'queued cached track falls back to upstream after manual cache clear or LRU eviction without PathNotFoundException',
+    () async {
+      final payload1 = Uint8List.fromList(List.filled(60 * 1024, 0x11));
+      final payload2 = Uint8List.fromList(List.filled(60 * 1024, 0x22));
+      final server1 = _MockAudioServer(payload1);
+      final server2 = _MockAudioServer(payload2);
+      await server1.start();
+      await server2.start();
+      addTearDown(server1.close);
+      addTearDown(server2.close);
+
+      final dir = await Directory.systemTemp.createTemp('asmr-queue-evict-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      var clock = DateTime(2026, 3, 1, 10, 0);
+      final cache = StreamAudioCache(
+        directoryProvider: () async => dir,
+        maxBytes: 100 * 1024, // fits 1 track (60 KB), evicts older when 2nd caches
+        now: () => clock,
+      );
+      addTearDown(cache.dispose);
+
+      SharedPreferences.setMockInitialValues({
+        'player.streamCache': true,
+        'player.autoPlayNext': true,
+      });
+      final settings = SettingsState(await AppPrefs.load());
+      final audio = TestAudio();
+      final player = PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: audio,
+        audioCache: cache,
+        accountScope: () => 'guest',
+      );
+      addTearDown(() {
+        player.dispose();
+        settings.dispose();
+      });
+
+      final tracks = [
+        TrackNode.fromJson({
+          'type': 'audio',
+          'hash': '600/0',
+          'title': '01.mp3',
+          'mediaStreamUrl': server1.uri.toString(),
+        }).flatten().single,
+        TrackNode.fromJson({
+          'type': 'audio',
+          'hash': '600/1',
+          'title': '02.mp3',
+          'mediaStreamUrl': server2.uri.toString(),
+        }).flatten().single,
+      ];
+      const key2 = AudioCacheKey(
+        accountScope: 'guest',
+        workId: 600,
+        trackId: '600/1',
+        lowQuality: false,
+      );
+
+      // --- Scenario A: Manual clear deletes pre-cached Track 2 while playing Track 1 ---
+      final preUriA = await cache.resolvePlayableUri(
+        key: key2,
+        remoteUri: server2.uri,
+      );
+      await _readAll(preUriA!);
+      expect(await cache.lookupComplete(key2), isNotNull);
+
+      await player.playWork(Work.fromJson({'id': 600, 'title': 'Queue Clear'}), tracks);
+      final sourcesA = audio.sources.cast<ja.UriAudioSource>();
+      expect(sourcesA[1].uri.scheme, 'http');
+      expect(sourcesA[1].uri.host, '127.0.0.1');
+
+      // While Track 1 is active, user manually clears stream cache -> deletes Track 2's file.
+      await cache.clearAll();
+      expect(await cache.lookupComplete(key2), isNull);
+
+      // Switching to Track 2 seamlessly streams from upstream instead of throwing PathNotFoundException!
+      server2.resetCounts();
+      await player.seekToIndex(1);
+      expect(await _readAll(sourcesA[1].uri), payload2);
+      expect(server2.requestCount, 1);
+      expect(await cache.lookupComplete(key2), isNotNull);
+
+      // --- Scenario B: LRU eviction deletes pre-cached Track 2 while Track 1 caches ---
+      await player.stop();
+      await cache.clearAll(includeActive: true);
+      clock = DateTime(2026, 3, 1, 11, 0);
+
+      // Pre-cache Track 2 at t=0.
+      final preUriB = await cache.resolvePlayableUri(
+        key: key2,
+        remoteUri: server2.uri,
+      );
+      await _readAll(preUriB!);
+      expect(await cache.lookupComplete(key2), isNotNull);
+
+      // Build queue starting at Track 1; Track 1 plays and caches at t=+10m -> evicts idle Track 2!
+      await player.playWork(Work.fromJson({'id': 600, 'title': 'Queue LRU'}), tracks);
+      final sourcesB = audio.sources.cast<ja.UriAudioSource>();
+      clock = clock.add(const Duration(minutes: 10));
+      expect(await _readAll(sourcesB[0].uri), payload1);
+      expect(await cache.lookupComplete(key2), isNull);
+
+      // Switch to Track 2 -> seamlessly falls back to upstream and plays full payload2!
+      server2.resetCounts();
+      await player.seekToIndex(1);
+      expect(await _readAll(sourcesB[1].uri), payload2);
+      expect(server2.requestCount, 1);
+    },
+  );
+
+  test(
+    'server-confirmed anonymous session clears persisted uid:A cache scope and stops using old cache, while offline startup keeps it',
+    () async {
+      final cachedPayload = Uint8List.fromList(List.filled(4096, 0xAA));
+      final freshPayload = Uint8List.fromList(List.filled(4096, 0xBB));
+      final server = _MockAudioServer(freshPayload);
+      await server.start();
+      addTearDown(server.close);
+
+      final dir = await Directory.systemTemp.createTemp('asmr-anon-scope-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final cache = StreamAudioCache(directoryProvider: () async => dir);
+      addTearDown(cache.dispose);
+
+      // Pre-populate uid:A's cache with cachedPayload so we can tell cache hit vs upstream.
+      final seedServer = _MockAudioServer(cachedPayload);
+      await seedServer.start();
+      addTearDown(seedServer.close);
+      const keyA = AudioCacheKey(
+        accountScope: 'uid:A',
+        workId: 88,
+        trackId: '88/0',
+        lowQuality: false,
+      );
+      final seedProxy = await cache.resolvePlayableUri(
+        key: keyA,
+        remoteUri: seedServer.uri,
+      );
+      await _readAll(seedProxy!);
+      expect(await cache.lookupComplete(keyA), isNotNull);
+
+      Map<String, Object?> savedSession() => {
+        'playerSession': {
+          'index': 0,
+          'position': 0,
+          'shuffle': false,
+          'loop': 0,
+        },
+        'playerQueue': [
+          {
+            'workId': 88,
+            'workTitle': 'Session Work',
+            'title': '01.mp3',
+            'hash': '88/0',
+            'url': server.uri.toString(),
+            'coverUrl': '',
+          },
+        ],
+      };
+
+      // 1. Offline cold start: fetchSession fails -> keeps uid:A offline cache!
+      SharedPreferences.setMockInitialValues({
+        'auth.token': 'stale-token',
+        'auth.accountScope': 'uid:A',
+        'player.streamCache': true,
+      });
+      final offlinePrefs = await AppPrefs.load();
+      final offlineSettings = SettingsState(offlinePrefs);
+      late PlayerState offlinePlayer;
+      final offlineApi = ApiClient(
+        adapter: TestAdapter((_) => throw const SocketException('offline')),
+      );
+      final offlineAuth = AuthState(
+        offlinePrefs,
+        api: offlineApi,
+        onTokenChanged: () => offlinePlayer.refreshTokens(),
+      );
+      final offlineAudio = TestAudio();
+      offlinePlayer = PlayerState(
+        settings: offlineSettings,
+        library: TestLibrary(),
+        audioPlayer: offlineAudio,
+        api: offlineApi,
+        audioCache: cache,
+        accountScope: () => offlineAuth.cacheAccountScope,
+        readSession: (_) async => savedSession(),
+      );
+      await offlinePlayer.restoreSession();
+      await offlineAuth.bootstrap();
+      expect(offlineAuth.cacheAccountScope, 'uid:A');
+      server.resetCounts();
+      final offlineUri = (offlineAudio.sources.single as ja.UriAudioSource).uri;
+      expect(await _readAll(offlineUri), cachedPayload);
+      expect(server.requestCount, 0);
+      offlinePlayer.dispose();
+      offlineAuth.dispose();
+      offlineSettings.dispose();
+
+      // 2. Online cold start where server returns loggedIn=false with authEnabled=true:
+      //    clears uid:A and reconfigures player queue away from uid:A cache!
+      SharedPreferences.setMockInitialValues({
+        'auth.token': 'stale-token',
+        'auth.accountScope': 'uid:A',
+        'player.streamCache': true,
+      });
+      final anonPrefs = await AppPrefs.load();
+      final anonSettings = SettingsState(anonPrefs);
+      late PlayerState anonPlayer;
+      final anonApi = ApiClient(
+        adapter: TestAdapter((request) {
+          return jsonResponse({
+            'auth': true,
+            'reg': true,
+            'user': {'loggedIn': false},
+          });
+        }),
+      );
+      final anonAuth = AuthState(
+        anonPrefs,
+        api: anonApi,
+        onTokenChanged: () => anonPlayer.refreshTokens(),
+      );
+      final anonAudio = TestAudio();
+      anonPlayer = PlayerState(
+        settings: anonSettings,
+        library: TestLibrary(),
+        audioPlayer: anonAudio,
+        api: anonApi,
+        audioCache: cache,
+        accountScope: () => anonAuth.cacheAccountScope,
+        readSession: (_) async => savedSession(),
+      );
+      await anonPlayer.restoreSession();
+      final oldProxyUri = (anonAudio.sources.single as ja.UriAudioSource).uri;
+      expect(oldProxyUri.host, '127.0.0.1');
+
+      await anonAuth.bootstrap();
+      expect(anonAuth.cacheAccountScope, isNull);
+      expect(anonPrefs.accountScope, isNull);
+
+      // Reconfigured source no longer uses uid:A cache; reads fresh upstream payload.
+      final newUri = (anonAudio.sources.single as ja.UriAudioSource).uri;
+      expect(newUri, server.uri);
+      server.resetCounts();
+      expect(await _readAll(newUri), freshPayload);
+      expect(server.requestCount, 1);
+
+      // Old uid:A proxy route is revoked (404).
+      final client = HttpClient();
+      addTearDown(() => client.close(force: true));
+      final staleReq = await client.getUrl(oldProxyUri);
+      final staleRes = await staleReq.close();
+      expect(staleRes.statusCode, HttpStatus.notFound);
+      await staleRes.drain<void>();
+
+      anonPlayer.dispose();
+      anonAuth.dispose();
+      anonSettings.dispose();
+    },
+  );
+
+  test(
+    'disabling stream cache then logging out revokes old account A CDN proxy routes and stops writing to account A cache',
+    () async {
+      final payload = Uint8List.fromList(List.generate(8192, (i) => i & 0xff));
+      final cdnServer = _MockAudioServer(payload);
+      await cdnServer.start();
+      addTearDown(cdnServer.close);
+
+      final dir = await Directory.systemTemp.createTemp('asmr-disable-logout-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final cache = StreamAudioCache(directoryProvider: () async => dir);
+      addTearDown(cache.dispose);
+
+      SharedPreferences.setMockInitialValues({
+        'auth.token': 'tok-a',
+        'auth.accountScope': 'uid:A',
+        'player.streamCache': true,
+      });
+      final prefs = await AppPrefs.load();
+      final settings = SettingsState(prefs);
+      late PlayerState player;
+      final api = ApiClient()..attachPrefs(prefs);
+      final auth = AuthState(
+        prefs,
+        api: api,
+        onTokenChanged: () => player.refreshTokens(),
+      );
+      final audio = TestAudio();
+      player = PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: audio,
+        api: api,
+        audioCache: cache,
+        accountScope: () => auth.cacheAccountScope,
+      );
+      addTearDown(() {
+        player.dispose();
+        auth.dispose();
+        settings.dispose();
+      });
+
+      final tracks = [
+        TrackNode.fromJson({
+          'type': 'audio',
+          'hash': '99/0',
+          'title': '01.mp3',
+          'mediaStreamUrl': cdnServer.uri.toString(),
+        }).flatten().single,
+        TrackNode.fromJson({
+          'type': 'audio',
+          'hash': '99/1',
+          'title': '02.mp3',
+          'mediaStreamUrl': cdnServer.uri.toString(),
+        }).flatten().single,
+      ];
+      await player.playWork(Work.fromJson({'id': 99, 'title': 'CDN Work'}), tracks);
+      final oldSources = audio.sources.cast<ja.UriAudioSource>();
+      final oldProxy0 = oldSources[0].uri;
+      expect(oldProxy0.host, '127.0.0.1');
+      expect(cache.activeRouteCount, 2);
+
+      // Disable stream cache, then immediately log out Account A.
+      settings.streamCacheEnabled = false;
+      await auth.logout();
+
+      // Existing queue is rebuilt to direct CDN URLs and old Account A proxy routes are revoked.
+      expect(cache.activeRouteCount, 0);
+      final updatedSources = audio.sources.cast<ja.UriAudioSource>();
+      expect(updatedSources, hasLength(2));
+      expect(updatedSources[0].uri, cdnServer.uri);
+      expect(updatedSources[1].uri, cdnServer.uri);
+
+      // Reading all tracks from the existing queue still plays online from CDN...
+      expect(await _readAll(updatedSources[0].uri), payload);
+      expect(await _readAll(updatedSources[1].uri), payload);
+
+      // ...and ZERO files are written to Account A's cache directory!
+      const keyA0 = AudioCacheKey(
+        accountScope: 'uid:A',
+        workId: 99,
+        trackId: '99/0',
+        lowQuality: false,
+      );
+      const keyA1 = AudioCacheKey(
+        accountScope: 'uid:A',
+        workId: 99,
+        trackId: '99/1',
+        lowQuality: false,
+      );
+      expect(await cache.lookupComplete(keyA0), isNull);
+      expect(await cache.lookupComplete(keyA1), isNull);
+      expect(await cache.refreshStats(), 0);
+      expect(dir.listSync(), isEmpty);
+
+      // Stale proxy URI returns 404 even if referenced directly.
+      final client = HttpClient();
+      addTearDown(() => client.close(force: true));
+      final staleReq = await client.getUrl(oldProxy0);
+      final staleRes = await staleReq.close();
+      expect(staleRes.statusCode, HttpStatus.notFound);
+      await staleRes.drain<void>();
     },
   );
 }
