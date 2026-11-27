@@ -225,6 +225,10 @@ class StreamAudioCache extends ChangeNotifier {
     try {
       await _ensureDir();
       final server = await _ensureServer();
+      // 若该队列路由分组在等待目录/服务初始化期间已被撤销，则不再注册过期路由。
+      if (routeGroup != null && !_routeGroups.containsKey(routeGroup)) {
+        return null;
+      }
       final routeId = '${++_routeSeq}_${key.id.substring(0, 12)}';
       _routes[routeId] = _ProxyTarget(
         key: key,
@@ -232,7 +236,7 @@ class StreamAudioCache extends ChangeNotifier {
         headers: Map<String, String>.from(headers),
       );
       if (routeGroup != null) {
-        _routeGroups.putIfAbsent(routeGroup, () => <String>{}).add(routeId);
+        _routeGroups[routeGroup]!.add(routeId);
       }
       return Uri(
         scheme: 'http',
@@ -414,6 +418,37 @@ class StreamAudioCache extends ChangeNotifier {
     return normalized == 'bytes=0-';
   }
 
+  /// 解析单个字节范围（支持 `bytes=S-E`、`bytes=S-` 与后缀范围 `bytes=-N`）。
+  static ({int start, int end})? _parseByteRange(
+    String rangeHeader,
+    int length,
+  ) {
+    if (length <= 0) return null;
+    final trimmed = rangeHeader.trim();
+    if (!trimmed.toLowerCase().startsWith('bytes=')) return null;
+    final spec = trimmed.substring('bytes='.length).split(',').first.trim();
+    final parts = spec.split('-');
+    if (parts.length != 2) return null;
+    final startStr = parts[0].trim();
+    final endStr = parts[1].trim();
+    if (startStr.isEmpty) {
+      if (endStr.isEmpty) return null;
+      final suffix = int.tryParse(endStr);
+      if (suffix == null || suffix <= 0) return null;
+      final start = suffix >= length ? 0 : length - suffix;
+      return (start: start, end: length - 1);
+    }
+    final start = int.tryParse(startStr);
+    if (start == null || start < 0 || start >= length) return null;
+    if (endStr.isEmpty) {
+      return (start: start, end: length - 1);
+    }
+    final rawEnd = int.tryParse(endStr);
+    if (rawEnd == null || rawEnd < start) return null;
+    final clampedEnd = rawEnd >= length ? length - 1 : rawEnd;
+    return (start: start, end: clampedEnd);
+  }
+
   Future<void> _serveLocalFile(
     HttpRequest request,
     File file,
@@ -427,14 +462,10 @@ class StreamAudioCache extends ChangeNotifier {
     request.response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
     request.response.headers.set(HttpHeaders.contentTypeHeader, contentType);
 
-    if (rangeHeader != null && rangeHeader.startsWith('bytes=')) {
-      final spec = rangeHeader.substring('bytes='.length).split(',').first;
-      final parts = spec.split('-');
-      final start = int.tryParse(parts[0].trim()) ?? 0;
-      final end = parts.length > 1 && parts[1].trim().isNotEmpty
-          ? (int.tryParse(parts[1].trim()) ?? (length - 1))
-          : (length - 1);
-      if (start < 0 || start >= length || end < start) {
+    if (rangeHeader != null &&
+        rangeHeader.trim().toLowerCase().startsWith('bytes=')) {
+      final parsedRange = _parseByteRange(rangeHeader, length);
+      if (parsedRange == null) {
         request.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
         request.response.headers.set(
           HttpHeaders.contentRangeHeader,
@@ -443,7 +474,8 @@ class StreamAudioCache extends ChangeNotifier {
         await request.response.close();
         return;
       }
-      final clampedEnd = end >= length ? length - 1 : end;
+      final start = parsedRange.start;
+      final clampedEnd = parsedRange.end;
       final chunkLen = clampedEnd - start + 1;
       request.response.statusCode = HttpStatus.partialContent;
       request.response.headers.set(

@@ -83,9 +83,14 @@ class PlayerState extends ChangeNotifier {
   final StreamAudioCache? _audioCache;
   final String? Function()? _accountScope;
   String? _activeRouteGroupId;
+  String? _buildingRouteGroupId;
   Map<int, String> _queueCacheKeys = const {};
   String? _activePlayingCacheKey;
   String? _appliedCacheScope;
+  String? _buildingCacheScope;
+  Future<void>? _inFlightSourceUpdate;
+  bool? _resumeAfterReload;
+  Duration? _reloadPosition;
 
   final ja.AudioPlayer _player;
   final DateTime Function() _now;
@@ -426,29 +431,48 @@ class PlayerState extends ChangeNotifier {
     _autoPlayNext = _settings.autoPlayNext;
     _streamCacheEnabled = _settings.streamCacheEnabled;
     if (_queue.isEmpty) return;
+    if (cacheToggleChanged && _audioCache != null) {
+      final buildingGroup = _buildingRouteGroupId;
+      if (buildingGroup != null) {
+        _audioCache.releaseRouteGroup(buildingGroup);
+      }
+    }
     if (autoPlayChanged) {
-      unawaited(_reloadPlaybackMode());
+      unawaited(_reloadPlaybackMode(resetPlatform: cacheToggleChanged));
     } else if (cacheToggleChanged && _audioCache != null) {
       final hasOnlineItem = _queue.any(
         (item) => !item.isLocal && item.url.isNotEmpty,
       );
-      if (_hasAppliedCacheRoutes || (_streamCacheEnabled && hasOnlineItem)) {
+      if (_hasAppliedOrPendingCacheRoutes ||
+          (_streamCacheEnabled && hasOnlineItem)) {
         unawaited(_reloadPlaybackMode(resetPlatform: true));
       }
     }
   }
 
   Future<void> _reloadPlaybackMode({bool resetPlatform = false}) async {
-    final wasPlaying = playing;
+    // 连续重建期间沿用用户最近一次主动选择的播放意图与进度，避免前一次 stop() 将播放态误判为暂停。
+    _resumeAfterReload ??= playing;
+    _reloadPosition ??= _player.position;
+    final resumePosition = _reloadPosition!;
     try {
       final loaded = await _setSources(
         _queue,
         _currentIndex,
-        _player.position,
+        resumePosition,
         resetPlatform: resetPlatform,
       );
-      if (loaded && wasPlaying) unawaited(_player.play());
+      if (loaded) {
+        final shouldResume = _resumeAfterReload ?? false;
+        _resumeAfterReload = null;
+        _reloadPosition = null;
+        if (shouldResume) unawaited(_player.play());
+      }
     } catch (e) {
+      if (!_changingSources) {
+        _resumeAfterReload = null;
+        _reloadPosition = null;
+      }
       _error = '更新播放模式失败：$e';
     }
     notifyListeners();
@@ -456,6 +480,32 @@ class PlayerState extends ChangeNotifier {
 
   // 关闭自动下一首时只向底层提交当前曲目，保留应用内完整队列。
   Future<bool> _setSources(
+    List<PlayItem> items,
+    int index,
+    Duration position, {
+    bool resetPlatform = false,
+    bool preload = true,
+  }) {
+    final future = _setSourcesImpl(
+      items,
+      index,
+      position,
+      resetPlatform: resetPlatform,
+      preload: preload,
+    );
+    final settled = future.then<void>((_) {}, onError: (Object _) {});
+    _inFlightSourceUpdate = settled;
+    unawaited(
+      settled.whenComplete(() {
+        if (identical(_inFlightSourceUpdate, settled)) {
+          _inFlightSourceUpdate = null;
+        }
+      }),
+    );
+    return future;
+  }
+
+  Future<bool> _setSourcesImpl(
     List<PlayItem> items,
     int index,
     Duration position, {
@@ -473,6 +523,13 @@ class PlayerState extends ChangeNotifier {
     final nextRouteGroup = cacheScope != null
         ? _audioCache?.createRouteGroup()
         : null;
+    final prevBuildingGroup = _buildingRouteGroupId;
+    _buildingRouteGroupId = nextRouteGroup;
+    _buildingCacheScope = cacheScope;
+    if (prevBuildingGroup != null && prevBuildingGroup != nextRouteGroup) {
+      _audioCache?.releaseRouteGroup(prevBuildingGroup);
+    }
+    var needsRetry = false;
     try {
       if (resetPlatform) {
         await _player.stop();
@@ -524,34 +581,61 @@ class PlayerState extends ChangeNotifier {
           return false;
         }
       }
-      final nextMediaToken = hasApiMedia ? token : null;
-      await _player.setAudioSources(
-        sources,
-        preload: preload,
-        initialIndex: _singleSource ? 0 : index,
-        initialPosition: position,
-      );
-      if (version != _sourceVersion) {
+      // 安装音源前复核当前配置，避免在途创建期间开关或账号变更导致旧路由装入播放器。
+      if (_desiredCacheScope() != cacheScope ||
+          (hasApiMedia && (_api.token ?? '') != token)) {
         _audioCache?.releaseRouteGroup(nextRouteGroup);
-        return false;
+        if (version == _sourceVersion) {
+          needsRetry = true;
+        } else {
+          return false;
+        }
       }
-      final hasCachedRoutes = nextQueueCacheKeys.isNotEmpty;
-      if (!hasCachedRoutes && nextRouteGroup != null) {
-        _audioCache?.releaseRouteGroup(nextRouteGroup);
+      if (!needsRetry) {
+        final nextMediaToken = hasApiMedia ? token : null;
+        await _player.setAudioSources(
+          sources,
+          preload: preload,
+          initialIndex: _singleSource ? 0 : index,
+          initialPosition: position,
+        );
+        if (version != _sourceVersion) {
+          _audioCache?.releaseRouteGroup(nextRouteGroup);
+          return false;
+        }
+        final hasCachedRoutes = nextQueueCacheKeys.isNotEmpty;
+        if (!hasCachedRoutes && nextRouteGroup != null) {
+          _audioCache?.releaseRouteGroup(nextRouteGroup);
+        }
+        final prevRouteGroup = _activeRouteGroupId;
+        _activeRouteGroupId = hasCachedRoutes ? nextRouteGroup : null;
+        _queueCacheKeys = nextQueueCacheKeys;
+        _setActivePlayingCacheKey(_queueCacheKeys[index]);
+        _audioCache?.releaseRouteGroup(prevRouteGroup);
+        _appliedMediaToken = nextMediaToken;
+        _appliedCacheScope = hasCachedRoutes ? cacheScope : null;
       }
-      final prevRouteGroup = _activeRouteGroupId;
-      _activeRouteGroupId = hasCachedRoutes ? nextRouteGroup : null;
-      _queueCacheKeys = nextQueueCacheKeys;
-      _setActivePlayingCacheKey(_queueCacheKeys[index]);
-      _audioCache?.releaseRouteGroup(prevRouteGroup);
-      _appliedMediaToken = nextMediaToken;
-      _appliedCacheScope = hasCachedRoutes ? cacheScope : null;
     } catch (_) {
       _audioCache?.releaseRouteGroup(nextRouteGroup);
       if (version == _sourceVersion) rethrow;
       return false;
     } finally {
-      if (version == _sourceVersion) _changingSources = false;
+      if (version == _sourceVersion) {
+        _changingSources = false;
+        if (_buildingRouteGroupId == nextRouteGroup) {
+          _buildingRouteGroupId = null;
+        }
+        _buildingCacheScope = null;
+      }
+    }
+    if (needsRetry) {
+      return _setSources(
+        items,
+        index,
+        position,
+        resetPlatform: resetPlatform,
+        preload: preload,
+      );
     }
     unawaited(_onItemChanged());
     return true;
@@ -774,6 +858,8 @@ class PlayerState extends ChangeNotifier {
     Duration? initialPosition,
   }) async {
     final version = ++_loadVersion;
+    _resumeAfterReload = null;
+    _reloadPosition = null;
     clearAbLoop();
     _saveProgress().ignore();
     _error = null;
@@ -842,10 +928,14 @@ class PlayerState extends ChangeNotifier {
       ? _currentAccountScope()
       : null;
 
-  bool get _hasAppliedCacheRoutes =>
+  bool get _hasAppliedOrPendingCacheRoutes =>
       _queueCacheKeys.isNotEmpty ||
       _activeRouteGroupId != null ||
-      _appliedCacheScope != null;
+      _appliedCacheScope != null ||
+      _buildingRouteGroupId != null ||
+      _buildingCacheScope != null;
+
+  String? get _effectiveCacheScope => _buildingCacheScope ?? _appliedCacheScope;
 
   void _setActivePlayingCacheKey(String? nextKey) {
     final cache = _audioCache;
@@ -859,10 +949,16 @@ class PlayerState extends ChangeNotifier {
   void _releaseAllActiveCacheKeys() {
     _setActivePlayingCacheKey(null);
     final prevGroup = _activeRouteGroupId;
+    final buildingGroup = _buildingRouteGroupId;
     _activeRouteGroupId = null;
+    _buildingRouteGroupId = null;
     _queueCacheKeys = const {};
     _appliedCacheScope = null;
+    _buildingCacheScope = null;
     _audioCache?.releaseRouteGroup(prevGroup);
+    if (buildingGroup != prevGroup) {
+      _audioCache?.releaseRouteGroup(buildingGroup);
+    }
   }
 
   Future<ja.UriAudioSource> _resolveSource(
@@ -931,16 +1027,22 @@ class PlayerState extends ChangeNotifier {
   }
 
   Future<void> toggle() async {
-    if (_player.playing) {
+    final currentlyPlaying = _changingSources
+        ? (_resumeAfterReload ?? _player.playing)
+        : _player.playing;
+    if (currentlyPlaying) {
+      if (_changingSources) _resumeAfterReload = false;
       await _player.pause();
       await _saveProgress();
     } else {
+      if (_changingSources) _resumeAfterReload = true;
       await _player.play();
     }
     notifyListeners();
   }
 
   Future<void> pause() async {
+    if (_changingSources) _resumeAfterReload = false;
     await _player.pause();
     await _saveProgress();
     notifyListeners();
@@ -961,10 +1063,15 @@ class PlayerState extends ChangeNotifier {
     await seekToIndex(_relativeIndex(-1)!);
   }
 
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) {
+    if (_changingSources) _reloadPosition = position;
+    return _player.seek(position);
+  }
 
   Future<void> seekToIndex(int index) async {
     if (index < 0 || index >= _queue.length) return;
+    _resumeAfterReload = null;
+    _reloadPosition = null;
     _saveProgress().ignore();
     if (index != _currentIndex) clearAbLoop();
     if (_singleSource) {
@@ -1010,6 +1117,8 @@ class PlayerState extends ChangeNotifier {
     _loadVersion++;
     final version = ++_sourceVersion;
     _changingSources = false;
+    _resumeAfterReload = null;
+    _reloadPosition = null;
     _saveProgress().ignore();
     _queue = const [];
     _currentIndex = -1;
@@ -1094,40 +1203,62 @@ class PlayerState extends ChangeNotifier {
 
   /// 账号令牌或缓存账号身份变更后撤下旧媒体源，并用当前身份重新配置音频引擎。
   Future<void> refreshTokens() async {
-    final token = _api.token ?? '';
-    final item = currentItem;
-    if (_disposed || item == null) return;
-    final tokenChanged =
-        _appliedMediaToken != null && _appliedMediaToken != token;
-    final desiredCacheScope = _desiredCacheScope();
-    final hasOnlineItem = _queue.any((e) => !e.isLocal && e.url.isNotEmpty);
-    final scopeChanged =
-        _audioCache != null &&
-        (_hasAppliedCacheRoutes
-            ? _appliedCacheScope != desiredCacheScope
-            : (desiredCacheScope != null && hasOnlineItem));
-    if (!tokenChanged && !scopeChanged) {
+    if (_disposed) return;
+    while (!_disposed) {
+      final token = _api.token ?? '';
+      final item = currentItem;
+      if (item == null) return;
+      final tokenChanged =
+          _appliedMediaToken != null && _appliedMediaToken != token;
+      final desiredCacheScope = _desiredCacheScope();
+      final hasOnlineItem = _queue.any((e) => !e.isLocal && e.url.isNotEmpty);
+      final scopeChanged =
+          _audioCache != null &&
+          (_hasAppliedOrPendingCacheRoutes
+              ? _effectiveCacheScope != desiredCacheScope
+              : (desiredCacheScope != null && hasOnlineItem));
+      if (!tokenChanged && !scopeChanged) {
+        final pending = _inFlightSourceUpdate;
+        if (pending != null) {
+          await pending;
+          continue;
+        }
+        return;
+      }
+      final buildingGroup = _buildingRouteGroupId;
+      if (buildingGroup != null) {
+        _audioCache?.releaseRouteGroup(buildingGroup);
+      }
+      final uri = item.isLocal ? null : Uri.tryParse(item.url);
+      final preload = token.isNotEmpty || uri == null || !_isApiMedia(uri);
+      _resumeAfterReload ??= playing;
+      _reloadPosition ??= _player.position;
+      final resumePosition = _reloadPosition!;
+      try {
+        final loaded = await _setSources(
+          _queue,
+          _currentIndex,
+          resumePosition,
+          resetPlatform: true,
+          preload: preload,
+        );
+        if (loaded) {
+          _error = null;
+          final shouldResume = _resumeAfterReload ?? false;
+          _resumeAfterReload = null;
+          _reloadPosition = null;
+          if (shouldResume && preload) unawaited(_player.play());
+        }
+      } catch (_) {
+        if (!_changingSources) {
+          _resumeAfterReload = null;
+          _reloadPosition = null;
+        }
+        _error = '更新播放地址失败，请重试。';
+      }
+      notifyListeners();
       return;
     }
-    final uri = item.isLocal ? null : Uri.tryParse(item.url);
-    final preload = token.isNotEmpty || uri == null || !_isApiMedia(uri);
-    final wasPlaying = playing;
-    try {
-      final loaded = await _setSources(
-        _queue,
-        _currentIndex,
-        _player.position,
-        resetPlatform: true,
-        preload: preload,
-      );
-      if (loaded) {
-        _error = null;
-        if (wasPlaying && preload) unawaited(_player.play());
-      }
-    } catch (_) {
-      _error = '更新播放地址失败，请重试。';
-    }
-    notifyListeners();
   }
 
   void clearError() {

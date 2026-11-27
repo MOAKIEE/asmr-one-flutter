@@ -96,6 +96,66 @@ class _DownloadableLibrary extends TestLibrary {
   Future<Map<String, String>> downloadedPaths(int workId) async => localPaths;
 }
 
+class _GatedSetSourcesAudio extends TestAudio {
+  Completer<void>? _entered;
+  Completer<void>? _release;
+
+  void gateNextSetSources(Completer<void> entered, Completer<void> release) {
+    _entered = entered;
+    _release = release;
+  }
+
+  @override
+  Future<Duration?> setAudioSources(
+    List<ja.AudioSource> sources, {
+    bool preload = true,
+    int? initialIndex,
+    Duration? initialPosition,
+    ja.ShuffleOrder? shuffleOrder,
+  }) async {
+    final entered = _entered;
+    final release = _release;
+    _entered = null;
+    _release = null;
+    if (entered != null && !entered.isCompleted) {
+      entered.complete();
+    }
+    if (release != null) {
+      await release.future;
+    }
+    return super.setAudioSources(
+      sources,
+      preload: preload,
+      initialIndex: initialIndex,
+      initialPosition: initialPosition,
+      shuffleOrder: shuffleOrder,
+    );
+  }
+}
+
+Future<({int statusCode, String? contentRange, Uint8List body})> _readRangeRaw(
+  Uri uri,
+  String range,
+) async {
+  final client = HttpClient();
+  try {
+    final req = await client.getUrl(uri);
+    req.headers.set(HttpHeaders.rangeHeader, range);
+    final res = await req.close();
+    final chunks = <int>[];
+    await for (final c in res) {
+      chunks.addAll(c);
+    }
+    return (
+      statusCode: res.statusCode,
+      contentRange: res.headers.value(HttpHeaders.contentRangeHeader),
+      body: Uint8List.fromList(chunks),
+    );
+  } finally {
+    client.close(force: true);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() {
@@ -1205,6 +1265,239 @@ void main() {
       final staleRes = await staleReq.close();
       expect(staleRes.statusCode, HttpStatus.notFound);
       await staleRes.drain<void>();
+    },
+  );
+
+  test(
+    'disabling cache and logging out while first proxy route is still being created cancels pending route and writes 0 files to account A',
+    () async {
+      final payload = Uint8List.fromList(List.generate(4096, (i) => i & 0xff));
+      final cdnServer = _MockAudioServer(payload);
+      await cdnServer.start();
+      addTearDown(cdnServer.close);
+
+      final dir = await Directory.systemTemp.createTemp('asmr-inflight-logout-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+
+      final dirRequested = Completer<void>();
+      final allowDir = Completer<void>();
+      var gatedOnce = false;
+      final cache = StreamAudioCache(
+        directoryProvider: () async {
+          if (!gatedOnce) {
+            gatedOnce = true;
+            dirRequested.complete();
+            await allowDir.future;
+          }
+          return dir;
+        },
+      );
+      addTearDown(cache.dispose);
+
+      SharedPreferences.setMockInitialValues({
+        'auth.token': 'tok-a',
+        'auth.accountScope': 'uid:A',
+        'player.streamCache': true,
+      });
+      final prefs = await AppPrefs.load();
+      final settings = SettingsState(prefs);
+      late PlayerState player;
+      final api = ApiClient()..attachPrefs(prefs);
+      final auth = AuthState(
+        prefs,
+        api: api,
+        onTokenChanged: () => player.refreshTokens(),
+      );
+      final audio = TestAudio();
+      player = PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: audio,
+        api: api,
+        audioCache: cache,
+        accountScope: () => auth.cacheAccountScope,
+      );
+      addTearDown(() {
+        player.dispose();
+        auth.dispose();
+        settings.dispose();
+      });
+
+      final track = TrackNode.fromJson({
+        'type': 'audio',
+        'hash': '105/0',
+        'title': '01.mp3',
+        'mediaStreamUrl': cdnServer.uri.toString(),
+      }).flatten().single;
+
+      // Start playWork: pauses mid-route creation BEFORE setAudioSources is called.
+      final playFuture = player.playWork(
+        Work.fromJson({'id': 105, 'title': 'Inflight Work'}),
+        [track],
+      );
+      await dirRequested.future;
+      expect(audio.sources, isEmpty);
+
+      // Disable cache and log out Account A before route creation finishes.
+      settings.streamCacheEnabled = false;
+      await auth.logout();
+
+      // Let the original route creation resume and finish.
+      allowDir.complete();
+      await playFuture;
+      await Future<void>.delayed(Duration.zero);
+
+      // Player must hold direct CDN URL, zero old proxy routes, and zero files in Account A cache.
+      expect(cache.activeRouteCount, 0);
+      expect(audio.sources, hasLength(1));
+      final installedUri = (audio.sources.single as ja.UriAudioSource).uri;
+      expect(installedUri, cdnServer.uri);
+      expect(await _readAll(installedUri), payload);
+      expect(await cache.refreshStats(), 0);
+      expect(dir.listSync(), isEmpty);
+    },
+  );
+
+  test(
+    'rapidly toggling stream cache preserves active playback while explicit pause during reload keeps player paused',
+    () async {
+      final payload = Uint8List.fromList(List.filled(4096, 0x55));
+      final server = _MockAudioServer(payload);
+      await server.start();
+      addTearDown(server.close);
+
+      final dir = await Directory.systemTemp.createTemp('asmr-rapid-toggle-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final cache = StreamAudioCache(directoryProvider: () async => dir);
+      addTearDown(cache.dispose);
+
+      SharedPreferences.setMockInitialValues({'player.streamCache': true});
+      final settings = SettingsState(await AppPrefs.load());
+      final audio = _GatedSetSourcesAudio();
+      final player = PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: audio,
+        audioCache: cache,
+        accountScope: () => 'guest',
+      );
+      addTearDown(() {
+        player.dispose();
+        settings.dispose();
+      });
+
+      final track = TrackNode.fromJson({
+        'type': 'audio',
+        'hash': '106/0',
+        'title': '01.mp3',
+        'mediaStreamUrl': server.uri.toString(),
+      }).flatten().single;
+      await player.playWork(Work.fromJson({'id': 106, 'title': 'Toggle Work'}), [
+        track,
+      ]);
+      expect(player.playing, isTrue);
+      audio.position = const Duration(seconds: 15);
+
+      // 1. Rapid OFF then ON while reload #1 is paused after stop(): must keep playing!
+      final entered1 = Completer<void>();
+      final release1 = Completer<void>();
+      audio.gateNextSetSources(entered1, release1);
+
+      settings.streamCacheEnabled = false;
+      await entered1.future;
+      // stop() inside reload #1 has already flipped raw playing to false.
+      expect(audio.playing, isFalse);
+
+      // Quickly turn cache back ON before reload #1 finishes.
+      settings.streamCacheEnabled = true;
+      release1.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(player.playing, isTrue);
+      expect(audio.position, const Duration(seconds: 15));
+      expect((audio.sources.single as ja.UriAudioSource).uri.host, '127.0.0.1');
+
+      // 2. Explicit user pause during reload: must stay paused once reload finishes!
+      final entered2 = Completer<void>();
+      final release2 = Completer<void>();
+      audio.gateNextSetSources(entered2, release2);
+
+      settings.streamCacheEnabled = false;
+      await entered2.future;
+      await player.pause();
+      release2.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(player.playing, isFalse);
+      expect((audio.sources.single as ja.UriAudioSource).uri, server.uri);
+    },
+  );
+
+  test(
+    'cached local proxy serves suffix Range bytes=-N as well as open-ended and explicit ranges',
+    () async {
+      final payload = Uint8List.fromList([10, 20, 30, 40, 50, 60, 70, 80]);
+      final server = _MockAudioServer(payload);
+      await server.start();
+      addTearDown(server.close);
+
+      final dir = await Directory.systemTemp.createTemp('asmr-suffix-range-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final cache = StreamAudioCache(directoryProvider: () async => dir);
+      addTearDown(cache.dispose);
+
+      const key = AudioCacheKey(
+        accountScope: 'guest',
+        workId: 107,
+        trackId: '107/0',
+        lowQuality: false,
+      );
+      final proxyUri = await cache.resolvePlayableUri(
+        key: key,
+        remoteUri: server.uri,
+      );
+      // Warm cache completely.
+      expect(await _readAll(proxyUri!), payload);
+      expect(await cache.lookupComplete(key), isNotNull);
+      server.resetCounts();
+
+      // Suffix range bytes=-2 -> last 2 bytes [70, 80], Content-Range: bytes 6-7/8.
+      final suffix2 = await _readRangeRaw(proxyUri, 'bytes=-2');
+      expect(suffix2.statusCode, HttpStatus.partialContent);
+      expect(suffix2.contentRange, 'bytes 6-7/8');
+      expect(suffix2.body, [70, 80]);
+
+      // Suffix range larger than file length -> full file bytes 0-7/8.
+      final suffixLarge = await _readRangeRaw(proxyUri, 'bytes=-20');
+      expect(suffixLarge.statusCode, HttpStatus.partialContent);
+      expect(suffixLarge.contentRange, 'bytes 0-7/8');
+      expect(suffixLarge.body, payload);
+
+      // Invalid zero suffix -> 416 Range Not Satisfiable.
+      final suffixZero = await _readRangeRaw(proxyUri, 'bytes=-0');
+      expect(suffixZero.statusCode, HttpStatus.requestedRangeNotSatisfiable);
+      expect(suffixZero.contentRange, 'bytes */8');
+
+      // Open-ended range bytes=0- -> full file bytes 0-7/8.
+      final openStart = await _readRangeRaw(proxyUri, 'bytes=0-');
+      expect(openStart.statusCode, HttpStatus.partialContent);
+      expect(openStart.contentRange, 'bytes 0-7/8');
+      expect(openStart.body, payload);
+
+      // Explicit range bytes=2-4 -> [30, 40, 50], Content-Range: bytes 2-4/8.
+      final explicit = await _readRangeRaw(proxyUri, 'bytes=2-4');
+      expect(explicit.statusCode, HttpStatus.partialContent);
+      expect(explicit.contentRange, 'bytes 2-4/8');
+      expect(explicit.body, [30, 40, 50]);
+
+      // All served from local cache with 0 upstream requests.
+      expect(server.requestCount, 0);
     },
   );
 }
