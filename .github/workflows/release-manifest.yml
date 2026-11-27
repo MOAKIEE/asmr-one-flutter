@@ -1,0 +1,66 @@
+name: Generate Release Manifest
+
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (leave empty for latest release)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate and upload latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          TAG="${EVENT_TAG:-$INPUT_TAG}"
+          if [ -n "$TAG" ]; then
+            API_PATH="repos/$REPO/releases/tags/$TAG"
+          else
+            API_PATH="repos/$REPO/releases/latest"
+          fi
+
+          gh api "$API_PATH" > release.json
+
+          DRAFT=$(jq -r '.draft' release.json)
+          PRERELEASE=$(jq -r '.prerelease' release.json)
+          TAG_NAME=$(jq -r '.tag_name' release.json)
+
+          if [ "$DRAFT" = "true" ] || [ "$PRERELEASE" = "true" ]; then
+            echo "Skip manifest generation for draft/prerelease: $TAG_NAME"
+            exit 0
+          fi
+
+          jq '{
+            tag_name: .tag_name,
+            name: .name,
+            html_url: .html_url,
+            published_at: .published_at,
+            prerelease: .prerelease,
+            draft: .draft,
+            body: .body,
+            assets: [
+              .assets[]
+              | select(.name != "latest.json")
+              | {
+                  name: .name,
+                  size: .size,
+                  browser_download_url: .browser_download_url
+                }
+            ]
+          }' release.json > latest.json
+
+          gh release upload "$TAG_NAME" latest.json --repo "$REPO" --clobber

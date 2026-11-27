@@ -13,6 +13,9 @@ class AppInfo {
   static const String repoDisplayUrl = 'github.com/$repoSlug';
   static const String repoUrl = 'https://github.com/$repoSlug';
   static const String releasesUrl = '$repoUrl/releases';
+  static const String latestReleaseManifestUrl =
+      '$releasesUrl/latest/download/latest.json';
+  static const String latestReleaseRedirectUrl = '$releasesUrl/latest';
   static const String latestReleaseApiUrl =
       'https://api.github.com/repos/$repoSlug/releases/latest';
 

@@ -202,8 +202,16 @@ void main() {
   });
 
   group('UpdateClient', () {
-    test('parses latest release and sends GitHub headers', () async {
-      final adapter = TestAdapter((_) => jsonResponse(_releaseJson()));
+    test('prefers static latest.json manifest without calling GitHub API', () async {
+      final adapter = TestAdapter(
+        (_) => ResponseBody.fromString(
+          jsonEncode(_releaseJson()),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['application/octet-stream'],
+          },
+        ),
+      );
       final client = UpdateClient(adapter: adapter);
 
       final release = await client.fetchLatestRelease();
@@ -211,9 +219,73 @@ void main() {
       expect(release!.tagName, 'v1.3.0');
       expect(release.versionTag, 'v1.3.0');
       final request = adapter.requests.single;
-      expect(request.uri.toString(), AppInfo.latestReleaseApiUrl);
+      expect(request.uri.toString(), AppInfo.latestReleaseManifestUrl);
       expect(request.headers['User-Agent'], AppInfo.repoName);
-      expect(request.headers['Accept'], 'application/vnd.github+json');
+    });
+
+    test('falls back to GitHub API with standard headers when manifest is missing', () async {
+      final adapter = TestAdapter((options) {
+        if (options.uri.toString() == AppInfo.latestReleaseManifestUrl) {
+          return ResponseBody.fromString('Not Found', 404);
+        }
+        return jsonResponse(_releaseJson());
+      });
+      final client = UpdateClient(adapter: adapter);
+
+      final release = await client.fetchLatestRelease();
+      expect(release, isNotNull);
+      expect(release!.tagName, 'v1.3.0');
+      expect(adapter.requests, hasLength(2));
+      expect(
+        adapter.requests[0].uri.toString(),
+        AppInfo.latestReleaseManifestUrl,
+      );
+      final apiReq = adapter.requests[1];
+      expect(apiReq.uri.toString(), AppInfo.latestReleaseApiUrl);
+      expect(apiReq.headers['User-Agent'], AppInfo.repoName);
+      expect(apiReq.headers['Accept'], 'application/vnd.github+json');
+      expect(apiReq.headers['X-GitHub-Api-Version'], '2022-11-28');
+    });
+
+    test('falls back to releases/latest 302 redirect when API is rate limited', () async {
+      final adapter = TestAdapter((options) {
+        final url = options.uri.toString();
+        if (url == AppInfo.latestReleaseManifestUrl) {
+          return ResponseBody.fromString('Not Found', 404);
+        }
+        if (url == AppInfo.latestReleaseApiUrl) {
+          return ResponseBody.fromString(
+            jsonEncode({'message': 'API rate limit exceeded'}),
+            403,
+            headers: {
+              Headers.contentTypeHeader: ['application/json'],
+              'x-ratelimit-remaining': ['0'],
+            },
+          );
+        }
+        return ResponseBody.fromString(
+          '',
+          302,
+          headers: {
+            'location': ['https://github.com/MOAKIEE/mimori/releases/tag/v1.4.0'],
+          },
+        );
+      });
+      final client = UpdateClient(adapter: adapter);
+
+      final release = await client.fetchLatestRelease();
+      expect(release, isNotNull);
+      expect(release!.tagName, 'v1.4.0');
+      expect(release.versionTag, 'v1.4.0');
+      expect(
+        release.htmlUrl,
+        'https://github.com/MOAKIEE/mimori/releases/tag/v1.4.0',
+      );
+      expect(adapter.requests, hasLength(3));
+      expect(
+        adapter.requests[2].uri.toString(),
+        AppInfo.latestReleaseRedirectUrl,
+      );
     });
 
     test('treats 404 as no published release', () async {
@@ -225,16 +297,22 @@ void main() {
     });
 
     test('classifies rate limit, network error and invalid response', () async {
-      final rateLimitAdapter = TestAdapter(
-        (_) => ResponseBody.fromString(
+      final rateLimitAdapter = TestAdapter((options) {
+        if (options.uri.toString() == AppInfo.latestReleaseManifestUrl) {
+          return ResponseBody.fromString('Not Found', 404);
+        }
+        if (options.uri.toString() == AppInfo.latestReleaseRedirectUrl) {
+          return ResponseBody.fromString('', 200);
+        }
+        return ResponseBody.fromString(
           jsonEncode({'message': 'API rate limit exceeded'}),
           403,
           headers: {
             Headers.contentTypeHeader: ['application/json'],
             'x-ratelimit-remaining': ['0'],
           },
-        ),
-      );
+        );
+      });
       await expectLater(
         UpdateClient(adapter: rateLimitAdapter).fetchLatestRelease(),
         throwsA(
