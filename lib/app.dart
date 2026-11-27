@@ -7,15 +7,15 @@ import 'screens/root_shell.dart';
 import 'state/settings_state.dart';
 
 /// 应用根组件。
-class AsmrOneApp extends StatelessWidget {
-  const AsmrOneApp({super.key});
+class MimoriApp extends StatelessWidget {
+  const MimoriApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsState>();
 
     return MaterialApp(
-      title: 'ASMR One',
+      title: 'Mimori',
       debugShowCheckedModeBanner: false,
       themeMode: settings.themeMode,
       theme: settings.themeFor(Brightness.light),

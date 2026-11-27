@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:asmr_one/core/api/api_client.dart';
-import 'package:asmr_one/core/storage/app_prefs.dart';
+import 'package:mimori/core/api/api_client.dart';
+import 'package:mimori/core/storage/app_prefs.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

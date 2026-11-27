@@ -1,7 +1,7 @@
-import 'package:asmr_one/core/models/work.dart';
-import 'package:asmr_one/core/storage/app_prefs.dart';
-import 'package:asmr_one/state/player_state.dart' as app;
-import 'package:asmr_one/state/settings_state.dart';
+import 'package:mimori/core/models/work.dart';
+import 'package:mimori/core/storage/app_prefs.dart';
+import 'package:mimori/state/player_state.dart' as app;
+import 'package:mimori/state/settings_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';

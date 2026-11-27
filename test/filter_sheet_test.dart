@@ -1,5 +1,5 @@
-import 'package:asmr_one/core/models/work.dart';
-import 'package:asmr_one/screens/filter_sheet.dart';
+import 'package:mimori/core/models/work.dart';
+import 'package:mimori/screens/filter_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

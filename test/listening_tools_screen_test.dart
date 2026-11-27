@@ -1,15 +1,15 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:asmr_one/core/models/track.dart';
-import 'package:asmr_one/core/models/work.dart';
-import 'package:asmr_one/core/storage/app_prefs.dart';
-import 'package:asmr_one/screens/listening_tools_screen.dart';
-import 'package:asmr_one/screens/player_screen.dart';
-import 'package:asmr_one/state/library_state.dart';
-import 'package:asmr_one/state/listening_notes.dart';
-import 'package:asmr_one/state/player_state.dart';
-import 'package:asmr_one/state/settings_state.dart';
+import 'package:mimori/core/models/track.dart';
+import 'package:mimori/core/models/work.dart';
+import 'package:mimori/core/storage/app_prefs.dart';
+import 'package:mimori/screens/listening_tools_screen.dart';
+import 'package:mimori/screens/player_screen.dart';
+import 'package:mimori/state/library_state.dart';
+import 'package:mimori/state/listening_notes.dart';
+import 'package:mimori/state/player_state.dart';
+import 'package:mimori/state/settings_state.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';

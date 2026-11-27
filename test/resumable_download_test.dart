@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:asmr_one/core/api/resumable_download.dart';
+import 'package:mimori/core/api/resumable_download.dart';
 
 void main() {
   for (final supportsRange in [true, false]) {

@@ -3,15 +3,15 @@ import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 
-import 'package:asmr_one/core/api/resumable_download.dart';
-import 'package:asmr_one/core/models/track.dart';
-import 'package:asmr_one/core/models/work.dart';
-import 'package:asmr_one/core/storage/library_db.dart';
-import 'package:asmr_one/core/storage/app_prefs.dart';
-import 'package:asmr_one/state/download_state.dart';
-import 'package:asmr_one/state/library_state.dart';
-import 'package:asmr_one/state/settings_state.dart';
-import 'package:asmr_one/screens/downloads_screen.dart';
+import 'package:mimori/core/api/resumable_download.dart';
+import 'package:mimori/core/models/track.dart';
+import 'package:mimori/core/models/work.dart';
+import 'package:mimori/core/storage/library_db.dart';
+import 'package:mimori/core/storage/app_prefs.dart';
+import 'package:mimori/state/download_state.dart';
+import 'package:mimori/state/library_state.dart';
+import 'package:mimori/state/settings_state.dart';
+import 'package:mimori/screens/downloads_screen.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

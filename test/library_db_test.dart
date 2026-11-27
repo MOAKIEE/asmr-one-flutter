@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:asmr_one/core/storage/library_db.dart';
-import 'package:asmr_one/core/models/work.dart';
-import 'package:asmr_one/state/library_state.dart';
+import 'package:mimori/core/storage/library_db.dart';
+import 'package:mimori/core/models/work.dart';
+import 'package:mimori/state/library_state.dart';
 
 void main() {
   setUpAll(() {

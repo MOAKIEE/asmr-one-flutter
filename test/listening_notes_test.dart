@@ -1,14 +1,14 @@
 import 'dart:async';
 
-import 'package:asmr_one/core/api/api_client.dart';
-import 'package:asmr_one/core/models/subtitle_matcher.dart';
-import 'package:asmr_one/core/models/track.dart';
-import 'package:asmr_one/core/models/work.dart';
-import 'package:asmr_one/core/storage/app_prefs.dart';
-import 'package:asmr_one/state/library_state.dart';
-import 'package:asmr_one/state/listening_notes.dart';
-import 'package:asmr_one/state/player_state.dart';
-import 'package:asmr_one/state/settings_state.dart';
+import 'package:mimori/core/api/api_client.dart';
+import 'package:mimori/core/models/subtitle_matcher.dart';
+import 'package:mimori/core/models/track.dart';
+import 'package:mimori/core/models/work.dart';
+import 'package:mimori/core/storage/app_prefs.dart';
+import 'package:mimori/state/library_state.dart';
+import 'package:mimori/state/listening_notes.dart';
+import 'package:mimori/state/player_state.dart';
+import 'package:mimori/state/settings_state.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

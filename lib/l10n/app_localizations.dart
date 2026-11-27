@@ -116,7 +116,7 @@ const Map<String, String> _zh = {
   "backup.invalidPlaylist": "播放列表引用无效",
   "backup.unsupportedData": "备份包含不支持的数据",
   "backup.invalidBookmark": "书签数据无效",
-  'app.name': 'ASMR One',
+  'app.name': 'Mimori',
   'app.tagline': '同人音声 · 在线收听',
 
   'nav.home': '首页',
@@ -356,7 +356,7 @@ const Map<String, String> _zh = {
   'settings.autoCheckUpdate': '启动时自动检查',
   'settings.githubRepo': 'GitHub 仓库',
   'settings.aboutText':
-      'ASMR One 是非官方第三方客户端，所有内容与数据均来自 asmr.one 公开接口，仅供学习交流使用。',
+      'Mimori 是非官方第三方客户端，所有内容与数据均来自 asmr.one 公开接口，仅供学习交流使用。',
 
   'update.availableTitle': '发现新版本',
   'update.foundShort': '发现新版本 {version}',
@@ -477,7 +477,7 @@ const Map<String, String> _ja = {
   "backup.invalidPlaylist": "プレイリスト参照が無効です",
   "backup.unsupportedData": "対応していないデータが含まれています",
   "backup.invalidBookmark": "ブックマークデータが無効です",
-  'app.name': 'ASMR One',
+  'app.name': 'Mimori',
   'app.tagline': '同人音声 · オンライン視聴',
 
   'nav.home': 'ホーム',
@@ -718,7 +718,7 @@ const Map<String, String> _ja = {
   'settings.autoCheckUpdate': '起動時に自動確認',
   'settings.githubRepo': 'GitHub リポジトリ',
   'settings.aboutText':
-      'ASMR One は非公式のサードパーティ製クライアントです。コンテンツは asmr.one の公開 API から取得しています。',
+      'Mimori は非公式のサードパーティ製クライアントです。コンテンツは asmr.one の公開 API から取得しています。',
 
   'update.availableTitle': '新しいバージョンがあります',
   'update.foundShort': '新バージョン {version}',
@@ -841,7 +841,7 @@ const Map<String, String> _en = {
   "backup.invalidPlaylist": "Invalid playlist reference",
   "backup.unsupportedData": "Backup contains unsupported data",
   "backup.invalidBookmark": "Invalid bookmark data",
-  'app.name': 'ASMR One',
+  'app.name': 'Mimori',
   'app.tagline': 'Doujin ASMR · Stream Online',
 
   'nav.home': 'Home',
@@ -1086,7 +1086,7 @@ const Map<String, String> _en = {
   'settings.checkingUpdate': 'Checking for updates…',
   'settings.autoCheckUpdate': 'Auto-check on launch',
   'settings.githubRepo': 'GitHub repository',
-  'settings.aboutText': 'ASMR One is an unofficial third-party client. All content comes from the public asmr.one API and is intended for study and personal use.',
+  'settings.aboutText': 'Mimori is an unofficial third-party client. All content comes from the public asmr.one API and is intended for study and personal use.',
 
   'update.availableTitle': 'Update available',
   'update.foundShort': 'Update {version} available',

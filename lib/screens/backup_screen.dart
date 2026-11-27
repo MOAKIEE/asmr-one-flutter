@@ -38,7 +38,7 @@ class _BackupScreenState extends State<BackupScreen> {
         final source = await library.exportBackup();
         final saved = await FilePicker.saveFile(
           fileName:
-              'asmr-one-${DateTime.now().toIso8601String().substring(0, 10)}.json',
+              'mimori-${DateTime.now().toIso8601String().substring(0, 10)}.json',
           mimeType: 'application/json',
           bytes: Uint8List.fromList(utf8.encode(source)),
         );

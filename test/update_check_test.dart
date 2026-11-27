@@ -1,21 +1,21 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:asmr_one/core/api/update_client.dart';
-import 'package:asmr_one/core/app_info.dart';
-import 'package:asmr_one/core/models/release.dart';
-import 'package:asmr_one/core/storage/app_prefs.dart';
-import 'package:asmr_one/l10n/app_localizations.dart';
-import 'package:asmr_one/screens/library_screen.dart';
-import 'package:asmr_one/screens/root_shell.dart';
-import 'package:asmr_one/screens/settings_screen.dart';
-import 'package:asmr_one/state/auth_state.dart';
-import 'package:asmr_one/state/download_state.dart';
-import 'package:asmr_one/state/library_state.dart';
-import 'package:asmr_one/state/player_state.dart';
-import 'package:asmr_one/state/settings_state.dart';
-import 'package:asmr_one/state/update_state.dart';
-import 'package:asmr_one/widgets/update_sheet.dart';
+import 'package:mimori/core/api/update_client.dart';
+import 'package:mimori/core/app_info.dart';
+import 'package:mimori/core/models/release.dart';
+import 'package:mimori/core/storage/app_prefs.dart';
+import 'package:mimori/l10n/app_localizations.dart';
+import 'package:mimori/screens/library_screen.dart';
+import 'package:mimori/screens/root_shell.dart';
+import 'package:mimori/screens/settings_screen.dart';
+import 'package:mimori/state/auth_state.dart';
+import 'package:mimori/state/download_state.dart';
+import 'package:mimori/state/library_state.dart';
+import 'package:mimori/state/player_state.dart';
+import 'package:mimori/state/settings_state.dart';
+import 'package:mimori/state/update_state.dart';
+import 'package:mimori/widgets/update_sheet.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -50,7 +50,7 @@ class _AsyncTestAdapter implements HttpClientAdapter {
 
 Map<String, dynamic> _releaseJson({
   String tag = 'v1.3.0',
-  String htmlUrl = 'https://github.com/MOAKIEE/asmr-one-flutter/releases/tag/v1.3.0',
+  String htmlUrl = 'https://github.com/MOAKIEE/mimori/releases/tag/v1.3.0',
   String body = '## 更新\n- 支持 **检查更新** 与 `arm64-v8a` 直链。',
   bool draft = false,
   List<Map<String, dynamic>>? assets,
@@ -69,31 +69,31 @@ Map<String, dynamic> _releaseJson({
           'name': 'SHA256SUMS.txt',
           'size': 320,
           'browser_download_url':
-              'https://github.com/MOAKIEE/asmr-one-flutter/releases/download/$tag/SHA256SUMS.txt',
+              'https://github.com/MOAKIEE/mimori/releases/download/$tag/SHA256SUMS.txt',
         },
         {
           'name': 'app-x86_64-release.apk',
           'size': 23000000,
           'browser_download_url':
-              'https://github.com/MOAKIEE/asmr-one-flutter/releases/download/$tag/app-x86_64-release.apk',
+              'https://github.com/MOAKIEE/mimori/releases/download/$tag/app-x86_64-release.apk',
         },
         {
           'name': 'app-armeabi-v7a-release.apk',
           'size': 19000000,
           'browser_download_url':
-              'https://github.com/MOAKIEE/asmr-one-flutter/releases/download/$tag/app-armeabi-v7a-release.apk',
+              'https://github.com/MOAKIEE/mimori/releases/download/$tag/app-armeabi-v7a-release.apk',
         },
         {
           'name': 'app-release.apk',
           'size': 60000000,
           'browser_download_url':
-              'https://github.com/MOAKIEE/asmr-one-flutter/releases/download/$tag/app-release.apk',
+              'https://github.com/MOAKIEE/mimori/releases/download/$tag/app-release.apk',
         },
         {
           'name': 'app-arm64-v8a-release.apk',
           'size': 21000000,
           'browser_download_url':
-              'https://github.com/MOAKIEE/asmr-one-flutter/releases/download/$tag/app-arm64-v8a-release.apk',
+              'https://github.com/MOAKIEE/mimori/releases/download/$tag/app-arm64-v8a-release.apk',
         },
       ],
 };
@@ -172,14 +172,14 @@ void main() {
 
     test('sanitizes GitHub URLs and orders APK assets by recommendation', () {
       expect(
-        sanitizeGitHubUrl('https://github.com/MOAKIEE/asmr-one-flutter'),
-        'https://github.com/MOAKIEE/asmr-one-flutter',
+        sanitizeGitHubUrl('https://github.com/MOAKIEE/mimori'),
+        'https://github.com/MOAKIEE/mimori',
       );
       expect(
         sanitizeGitHubUrl('https://objects.githubusercontent.com/file.apk'),
         'https://objects.githubusercontent.com/file.apk',
       );
-      expect(sanitizeGitHubUrl('http://github.com/MOAKIEE/asmr-one-flutter'), isNull);
+      expect(sanitizeGitHubUrl('http://github.com/MOAKIEE/mimori'), isNull);
       expect(sanitizeGitHubUrl('javascript:alert(1)'), isNull);
       expect(sanitizeGitHubUrl('https://evil.example/github.com'), isNull);
       expect(sanitizeGitHubUrl('https://user@github.com/repo'), isNull);
@@ -493,7 +493,7 @@ void main() {
       expect(
         launchedUrls,
         contains(
-          'https://github.com/MOAKIEE/asmr-one-flutter/releases/tag/v1.3.0',
+          'https://github.com/MOAKIEE/mimori/releases/tag/v1.3.0',
         ),
       );
       await tester.tap(find.text('忽略此版本'));

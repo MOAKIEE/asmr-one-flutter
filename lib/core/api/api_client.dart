@@ -78,7 +78,7 @@ class ApiClient {
       receiveTimeout: const Duration(seconds: 30),
       sendTimeout: const Duration(seconds: 15),
       headers: const {
-        'User-Agent': 'ASMROneClient/1.0 (Flutter; Android)',
+        'User-Agent': 'Mimori/1.0 (Flutter; Android)',
         'Accept': 'application/json',
       },
       // 交由业务层统一判断状态码，避免非 2xx 直接抛裸异常。

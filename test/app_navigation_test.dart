@@ -1,17 +1,17 @@
 import 'dart:async';
 
-import 'package:asmr_one/app.dart';
-import 'package:asmr_one/core/models/work.dart';
-import 'package:asmr_one/core/storage/app_prefs.dart';
-import 'package:asmr_one/core/storage/library_db.dart';
-import 'package:asmr_one/screens/player_screen.dart';
-import 'package:asmr_one/screens/playlist_screen.dart';
-import 'package:asmr_one/state/auth_state.dart';
-import 'package:asmr_one/state/download_state.dart';
-import 'package:asmr_one/state/library_state.dart';
-import 'package:asmr_one/state/player_state.dart';
-import 'package:asmr_one/state/settings_state.dart';
-import 'package:asmr_one/widgets/mini_player.dart';
+import 'package:mimori/app.dart';
+import 'package:mimori/core/models/work.dart';
+import 'package:mimori/core/storage/app_prefs.dart';
+import 'package:mimori/core/storage/library_db.dart';
+import 'package:mimori/screens/player_screen.dart';
+import 'package:mimori/screens/playlist_screen.dart';
+import 'package:mimori/state/auth_state.dart';
+import 'package:mimori/state/download_state.dart';
+import 'package:mimori/state/library_state.dart';
+import 'package:mimori/state/player_state.dart';
+import 'package:mimori/state/settings_state.dart';
+import 'package:mimori/widgets/mini_player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -83,7 +83,7 @@ void main() {
           ChangeNotifierProvider<DownloadState>.value(value: downloads),
           ChangeNotifierProvider<PlayerState>.value(value: player),
         ],
-        child: const AsmrOneApp(),
+        child: const MimoriApp(),
       ),
     );
     await tester.pump();

@@ -544,7 +544,7 @@ class DownloadState extends ChangeNotifier {
 
   static Future<Directory> _workDir(int workId) async {
     final base = await getApplicationDocumentsDirectory();
-    final dir = Directory(p.join(base.path, 'asmr_downloads', '$workId'));
+    final dir = Directory(p.join(base.path, 'mimori_downloads', '$workId'));
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
   }

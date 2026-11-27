@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:asmr_one/core/api/api_client.dart';
-import 'package:asmr_one/core/models/common.dart';
-import 'package:asmr_one/core/models/playlist.dart';
-import 'package:asmr_one/core/models/user.dart';
-import 'package:asmr_one/core/storage/app_prefs.dart';
-import 'package:asmr_one/state/auth_state.dart';
+import 'package:mimori/core/api/api_client.dart';
+import 'package:mimori/core/models/common.dart';
+import 'package:mimori/core/models/playlist.dart';
+import 'package:mimori/core/models/user.dart';
+import 'package:mimori/core/storage/app_prefs.dart';
+import 'package:mimori/state/auth_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

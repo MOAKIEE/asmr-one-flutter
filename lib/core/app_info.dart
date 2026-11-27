@@ -8,7 +8,7 @@ class AppInfo {
   static const String fallbackVersion = '1.3.0';
 
   static const String repoOwner = 'MOAKIEE';
-  static const String repoName = 'asmr-one-flutter';
+  static const String repoName = 'mimori';
   static const String repoSlug = '$repoOwner/$repoName';
   static const String repoDisplayUrl = 'github.com/$repoSlug';
   static const String repoUrl = 'https://github.com/$repoSlug';

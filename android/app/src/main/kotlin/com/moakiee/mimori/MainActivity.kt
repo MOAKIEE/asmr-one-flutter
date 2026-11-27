@@ -1,4 +1,4 @@
-package com.asmrone.asmr_one
+package com.moakiee.mimori
 
 import io.flutter.embedding.android.FlutterActivity
 

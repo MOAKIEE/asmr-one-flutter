@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:asmr_one/core/models/subtitle.dart';
+import 'package:mimori/core/models/subtitle.dart';
 
 void main() {
   test('SRT multi-line captions respect gaps and signed user offset', () {

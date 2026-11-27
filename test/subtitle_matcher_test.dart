@@ -1,5 +1,5 @@
-import 'package:asmr_one/core/models/subtitle_matcher.dart';
-import 'package:asmr_one/core/models/track.dart';
+import 'package:mimori/core/models/subtitle_matcher.dart';
+import 'package:mimori/core/models/track.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 TrackNode _folder(String title, List<TrackNode> children) =>

@@ -15,7 +15,7 @@ class LibraryDb {
   final Database _db;
 
   static const int _version = 3;
-  static const String _name = 'asmr_one_library.db';
+  static const String _name = 'mimori_library.db';
 
   static Future<LibraryDb> open({String? path}) async {
     final dir = await getDatabasesPath();
@@ -450,7 +450,7 @@ class LibraryDb {
       where: "key LIKE 'bookmarks:%' OR key LIKE 'subtitle:%'",
     );
     return jsonEncode({
-      'format': 'asmr-one-library',
+      'format': 'mimori-library',
       'version': 1,
       'tables': tables,
     });
@@ -459,8 +459,9 @@ class LibraryDb {
   /// Merge portable user data atomically; never import tokens, paths or queues.
   Future<void> importBackup(String source) async {
     final root = jsonDecode(source);
+    const supportedFormats = {'mimori-library', 'asmr-one-library'};
     if (root is! Map ||
-        root['format'] != 'asmr-one-library' ||
+        !supportedFormats.contains(root['format']) ||
         root['version'] != 1 ||
         root['tables'] is! Map) {
       throw const FormatException('不支持的备份格式');

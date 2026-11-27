@@ -26,8 +26,8 @@ Future<void> main() async {
 
   // 后台播放（通知栏控制）必须在使用 AudioPlayer 之前完成初始化。
   await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.asmrone.asmr_one.channel.audio',
-    androidNotificationChannelName: 'ASMR 播放',
+    androidNotificationChannelId: 'com.moakiee.mimori.channel.audio',
+    androidNotificationChannelName: 'Mimori 播放',
     androidNotificationChannelDescription: '显示当前播放的音频与播放控制',
     androidNotificationOngoing: true,
     androidStopForegroundOnPause: true,
@@ -85,7 +85,7 @@ class _StorageBootstrapState extends State<StorageBootstrap> {
   );
 }
 
-/// 装配依赖并交给 [AsmrOneApp]。
+/// 装配依赖并交给 [MimoriApp]。
 class BootstrapApp extends StatefulWidget {
   const BootstrapApp({super.key, required this.prefs, required this.db});
 
@@ -169,7 +169,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
         ChangeNotifierProvider<DownloadState>.value(value: _downloads),
         ChangeNotifierProvider<UpdateState>.value(value: _updates),
       ],
-      child: const AsmrOneApp(),
+      child: const MimoriApp(),
     );
   }
 }

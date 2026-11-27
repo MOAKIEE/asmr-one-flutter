@@ -1,4 +1,4 @@
-# ASMR One · Flutter 客户端
+# Mimori · Flutter 客户端
 
 基于 [asmr.one](https://asmr.one) 公开接口实现的第三方 Android 客户端。
 

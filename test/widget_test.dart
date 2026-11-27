@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:asmr_one/core/models/common.dart';
-import 'package:asmr_one/core/models/track.dart';
-import 'package:asmr_one/core/models/work.dart';
-import 'package:asmr_one/core/theme/app_theme.dart';
-import 'package:asmr_one/core/utils/formatters.dart';
-import 'package:asmr_one/l10n/app_localizations.dart';
+import 'package:mimori/core/models/common.dart';
+import 'package:mimori/core/models/track.dart';
+import 'package:mimori/core/models/work.dart';
+import 'package:mimori/core/theme/app_theme.dart';
+import 'package:mimori/core/utils/formatters.dart';
+import 'package:mimori/l10n/app_localizations.dart';
 
 /// 这些用例锁定住与 asmr.one 接口之间的数据契约：
 /// 接口偶发地用 int / double / String 混用同一字段，

@@ -1,16 +1,16 @@
 import 'dart:async';
 
-import 'package:asmr_one/core/api/api_client.dart';
-import 'package:asmr_one/core/models/work.dart';
-import 'package:asmr_one/core/storage/app_prefs.dart';
-import 'package:asmr_one/l10n/app_localizations.dart';
-import 'package:asmr_one/screens/work_list_screen.dart';
-import 'package:asmr_one/state/library_state.dart';
-import 'package:asmr_one/state/player_state.dart';
-import 'package:asmr_one/state/settings_state.dart';
-import 'package:asmr_one/state/work_feed.dart';
-import 'package:asmr_one/widgets/work_grid.dart';
-import 'package:asmr_one/widgets/work_rail.dart';
+import 'package:mimori/core/api/api_client.dart';
+import 'package:mimori/core/models/work.dart';
+import 'package:mimori/core/storage/app_prefs.dart';
+import 'package:mimori/l10n/app_localizations.dart';
+import 'package:mimori/screens/work_list_screen.dart';
+import 'package:mimori/state/library_state.dart';
+import 'package:mimori/state/player_state.dart';
+import 'package:mimori/state/settings_state.dart';
+import 'package:mimori/state/work_feed.dart';
+import 'package:mimori/widgets/work_grid.dart';
+import 'package:mimori/widgets/work_rail.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
