@@ -89,8 +89,12 @@ class PlayerState extends ChangeNotifier {
   String? _appliedCacheScope;
   String? _buildingCacheScope;
   Future<void>? _inFlightSourceUpdate;
+  bool _lastSourceUpdateOk = false;
+  bool _lastSourceUpdatePreloaded = true;
+  bool _autoPlayAllowedForLoad = false;
   bool? _resumeAfterReload;
   Duration? _reloadPosition;
+  Duration? _pendingSeekPosition;
 
   final ja.AudioPlayer _player;
   final DateTime Function() _now;
@@ -466,12 +470,13 @@ class PlayerState extends ChangeNotifier {
         final shouldResume = _resumeAfterReload ?? false;
         _resumeAfterReload = null;
         _reloadPosition = null;
-        if (shouldResume) unawaited(_player.play());
+        if (shouldResume && !_player.playing) unawaited(_player.play());
       }
     } catch (e) {
       if (!_changingSources) {
         _resumeAfterReload = null;
         _reloadPosition = null;
+        _pendingSeekPosition = null;
       }
       _error = '更新播放模式失败：$e';
     }
@@ -514,6 +519,8 @@ class PlayerState extends ChangeNotifier {
   }) async {
     final version = ++_sourceVersion;
     _changingSources = true;
+    _lastSourceUpdateOk = false;
+    _lastSourceUpdatePreloaded = preload;
     _singleSource = !_settings.autoPlayNext || _stopAfterTrack;
     if (_singleSource && _singleShuffleOrder.length != items.length) {
       _shuffleSingleQueue(index);
@@ -593,15 +600,31 @@ class PlayerState extends ChangeNotifier {
       }
       if (!needsRetry) {
         final nextMediaToken = hasApiMedia ? token : null;
+        final initialTargetPosition = _pendingSeekPosition ?? position;
         await _player.setAudioSources(
           sources,
           preload: preload,
           initialIndex: _singleSource ? 0 : index,
-          initialPosition: position,
+          initialPosition: initialTargetPosition,
         );
         if (version != _sourceVersion) {
           _audioCache?.releaseRouteGroup(nextRouteGroup);
           return false;
+        }
+        // 重建期间若用户继续拖动进度，装源完成后立即同步到最后一次目标位置。
+        var appliedPosition = initialTargetPosition;
+        while (_pendingSeekPosition != null &&
+            _pendingSeekPosition != appliedPosition) {
+          final seekTarget = _pendingSeekPosition!;
+          await _player.seek(seekTarget);
+          if (version != _sourceVersion) {
+            _audioCache?.releaseRouteGroup(nextRouteGroup);
+            return false;
+          }
+          appliedPosition = seekTarget;
+        }
+        if (version == _sourceVersion) {
+          _pendingSeekPosition = null;
         }
         final hasCachedRoutes = nextQueueCacheKeys.isNotEmpty;
         if (!hasCachedRoutes && nextRouteGroup != null) {
@@ -614,6 +637,7 @@ class PlayerState extends ChangeNotifier {
         _audioCache?.releaseRouteGroup(prevRouteGroup);
         _appliedMediaToken = nextMediaToken;
         _appliedCacheScope = hasCachedRoutes ? cacheScope : null;
+        _lastSourceUpdateOk = true;
       }
     } catch (_) {
       _audioCache?.releaseRouteGroup(nextRouteGroup);
@@ -745,11 +769,13 @@ class PlayerState extends ChangeNotifier {
 
     final index = selectedIndex.clamp(0, items.length - 1);
     _work = work;
-    if (!await _load(items, index: index, shuffle: shuffle)) {
+    if (!await _load(items, index: index, shuffle: shuffle, autoPlay: true)) {
       return (queued: 0, unplayable: unplayable);
     }
     await _library.recordHistory(work);
-    _player.play();
+    if (_consumeLoadAutoPlay() && !_player.playing) {
+      unawaited(_player.play());
+    }
     notifyListeners();
     return (queued: items.length, unplayable: unplayable);
   }
@@ -802,9 +828,11 @@ class PlayerState extends ChangeNotifier {
         .toList();
 
     _work = work;
-    if (!await _load(items)) return false;
+    if (!await _load(items, autoPlay: true)) return false;
     await _library.recordHistory(work);
-    unawaited(_player.play());
+    if (_consumeLoadAutoPlay() && !_player.playing) {
+      unawaited(_player.play());
+    }
     notifyListeners();
     return true;
   }
@@ -845,10 +873,18 @@ class PlayerState extends ChangeNotifier {
           : null,
     );
     _work = work;
-    if (!await _load([item])) return;
+    if (!await _load([item], autoPlay: true)) return;
     await _library.recordHistory(work);
-    _player.play();
+    if (_consumeLoadAutoPlay() && !_player.playing) {
+      unawaited(_player.play());
+    }
     notifyListeners();
+  }
+
+  bool _consumeLoadAutoPlay() {
+    final allowed = _autoPlayAllowedForLoad && _lastSourceUpdatePreloaded;
+    _autoPlayAllowedForLoad = false;
+    return allowed;
   }
 
   Future<bool> _load(
@@ -856,10 +892,13 @@ class PlayerState extends ChangeNotifier {
     int index = 0,
     bool shuffle = false,
     Duration? initialPosition,
+    bool autoPlay = false,
   }) async {
     final version = ++_loadVersion;
-    _resumeAfterReload = null;
+    _autoPlayAllowedForLoad = autoPlay;
+    _resumeAfterReload = autoPlay ? true : null;
     _reloadPosition = null;
+    _pendingSeekPosition = null;
     clearAbLoop();
     _saveProgress().ignore();
     _error = null;
@@ -880,9 +919,24 @@ class PlayerState extends ChangeNotifier {
               ? Duration(milliseconds: saved)
               : Duration.zero);
       if (version != _loadVersion) return false;
-      final loaded = await _setSources(items, index, resume);
+      _reloadPosition ??= resume;
+      var loaded = await _setSources(items, index, resume);
+      // 若本次建源被同队列的配置重建（如切换缓存或退登）接替，等待接替建源结束并沿用其结果。
+      if (!loaded && version == _loadVersion) {
+        while (_inFlightSourceUpdate != null && version == _loadVersion) {
+          await _inFlightSourceUpdate;
+        }
+        if (version != _loadVersion) return false;
+        loaded = _lastSourceUpdateOk;
+      }
       if (!loaded || version != _loadVersion) return false;
+      if (!_changingSources) {
+        _resumeAfterReload = null;
+        _reloadPosition = null;
+        _pendingSeekPosition = null;
+      }
       if (resume > Duration.zero &&
+          _player.position == resume &&
           _player.duration != null &&
           resume >= _player.duration! - const Duration(seconds: 3)) {
         await _player.seek(Duration.zero);
@@ -894,6 +948,12 @@ class PlayerState extends ChangeNotifier {
       return true;
     } catch (e) {
       if (version != _loadVersion) return false;
+      _autoPlayAllowedForLoad = false;
+      if (!_changingSources) {
+        _resumeAfterReload = null;
+        _reloadPosition = null;
+        _pendingSeekPosition = null;
+      }
       _error = '加载音频失败：$e';
       await _player.stop();
       notifyListeners();
@@ -1031,6 +1091,7 @@ class PlayerState extends ChangeNotifier {
         ? (_resumeAfterReload ?? _player.playing)
         : _player.playing;
     if (currentlyPlaying) {
+      _autoPlayAllowedForLoad = false;
       if (_changingSources) _resumeAfterReload = false;
       await _player.pause();
       await _saveProgress();
@@ -1042,6 +1103,7 @@ class PlayerState extends ChangeNotifier {
   }
 
   Future<void> pause() async {
+    _autoPlayAllowedForLoad = false;
     if (_changingSources) _resumeAfterReload = false;
     await _player.pause();
     await _saveProgress();
@@ -1057,14 +1119,17 @@ class PlayerState extends ChangeNotifier {
   Future<void> previous() async {
     // 播放超过 3 秒时先回到本曲开头。
     if (_player.position.inSeconds > 3 || !hasPrevious) {
-      await _player.seek(Duration.zero);
+      await seek(Duration.zero);
       return;
     }
     await seekToIndex(_relativeIndex(-1)!);
   }
 
   Future<void> seek(Duration position) {
-    if (_changingSources) _reloadPosition = position;
+    if (_changingSources) {
+      _reloadPosition = position;
+      _pendingSeekPosition = position;
+    }
     return _player.seek(position);
   }
 
@@ -1072,6 +1137,7 @@ class PlayerState extends ChangeNotifier {
     if (index < 0 || index >= _queue.length) return;
     _resumeAfterReload = null;
     _reloadPosition = null;
+    _pendingSeekPosition = null;
     _saveProgress().ignore();
     if (index != _currentIndex) clearAbLoop();
     if (_singleSource) {
@@ -1117,8 +1183,10 @@ class PlayerState extends ChangeNotifier {
     _loadVersion++;
     final version = ++_sourceVersion;
     _changingSources = false;
+    _autoPlayAllowedForLoad = false;
     _resumeAfterReload = null;
     _reloadPosition = null;
+    _pendingSeekPosition = null;
     _saveProgress().ignore();
     _queue = const [];
     _currentIndex = -1;
@@ -1247,12 +1315,15 @@ class PlayerState extends ChangeNotifier {
           final shouldResume = _resumeAfterReload ?? false;
           _resumeAfterReload = null;
           _reloadPosition = null;
-          if (shouldResume && preload) unawaited(_player.play());
+          if (shouldResume && preload && !_player.playing) {
+            unawaited(_player.play());
+          }
         }
       } catch (_) {
         if (!_changingSources) {
           _resumeAfterReload = null;
           _reloadPosition = null;
+          _pendingSeekPosition = null;
         }
         _error = '更新播放地址失败，请重试。';
       }

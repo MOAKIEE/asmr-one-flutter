@@ -1346,10 +1346,13 @@ void main() {
 
       // Let the original route creation resume and finish.
       allowDir.complete();
-      await playFuture;
+      final playResult = await playFuture;
       await Future<void>.delayed(Duration.zero);
 
-      // Player must hold direct CDN URL, zero old proxy routes, and zero files in Account A cache.
+      // First-play request must succeed and start playback on the direct CDN URL, with 0 writes to Account A.
+      expect(playResult.queued, 1);
+      expect(playResult.unplayable, 0);
+      expect(player.playing, isTrue);
       expect(cache.activeRouteCount, 0);
       expect(audio.sources, hasLength(1));
       final installedUri = (audio.sources.single as ja.UriAudioSource).uri;
@@ -1498,6 +1501,115 @@ void main() {
 
       // All served from local cache with 0 upstream requests.
       expect(server.requestCount, 0);
+    },
+  );
+
+  test(
+    'seeking twice during source reload preserves final target position and latest play/pause state in both playing and paused modes',
+    () async {
+      final payload = Uint8List.fromList(List.filled(4096, 0x33));
+      final server = _MockAudioServer(payload);
+      await server.start();
+      addTearDown(server.close);
+
+      final dir = await Directory.systemTemp.createTemp('asmr-reload-seek-');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final cache = StreamAudioCache(directoryProvider: () async => dir);
+      addTearDown(cache.dispose);
+
+      SharedPreferences.setMockInitialValues({'player.streamCache': true});
+      final settings = SettingsState(await AppPrefs.load());
+      final audio = _GatedSetSourcesAudio();
+      final player = PlayerState(
+        settings: settings,
+        library: TestLibrary(),
+        audioPlayer: audio,
+        audioCache: cache,
+        accountScope: () => 'guest',
+      );
+      addTearDown(() {
+        player.dispose();
+        settings.dispose();
+      });
+
+      final track = TrackNode.fromJson({
+        'type': 'audio',
+        'hash': '108/0',
+        'title': '01.mp3',
+        'mediaStreamUrl': server.uri.toString(),
+      }).flatten().single;
+      await player.playWork(Work.fromJson({'id': 108, 'title': 'Seek Work'}), [
+        track,
+      ]);
+      expect(player.playing, isTrue);
+
+      // 1. Playing at 15s -> toggle cache -> seek twice (25s -> 36s) and stay playing.
+      audio.position = const Duration(seconds: 15);
+      final entered1 = Completer<void>();
+      final release1 = Completer<void>();
+      audio.gateNextSetSources(entered1, release1);
+
+      settings.streamCacheEnabled = false;
+      await entered1.future;
+      await player.seek(const Duration(seconds: 25));
+      await player.seek(const Duration(seconds: 36));
+      release1.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(player.playing, isTrue);
+      expect(audio.position, const Duration(seconds: 36));
+
+      // 2. Playing at 15s -> toggle cache -> seek twice (28s -> 41s) and pause during reload.
+      audio.position = const Duration(seconds: 15);
+      final entered2 = Completer<void>();
+      final release2 = Completer<void>();
+      audio.gateNextSetSources(entered2, release2);
+
+      settings.streamCacheEnabled = true;
+      await entered2.future;
+      await player.seek(const Duration(seconds: 28));
+      await player.seek(const Duration(seconds: 41));
+      await player.pause();
+      release2.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(player.playing, isFalse);
+      expect(audio.position, const Duration(seconds: 41));
+
+      // 3. Paused at 15s -> toggle cache -> seek twice (22s -> 44s) -> stays paused at 44s.
+      audio.position = const Duration(seconds: 15);
+      final entered3 = Completer<void>();
+      final release3 = Completer<void>();
+      audio.gateNextSetSources(entered3, release3);
+
+      settings.streamCacheEnabled = false;
+      await entered3.future;
+      await player.seek(const Duration(seconds: 22));
+      await player.seek(const Duration(seconds: 44));
+      release3.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(player.playing, isFalse);
+      expect(audio.position, const Duration(seconds: 44));
+
+      // 4. Paused at 15s -> toggle cache -> seek twice (20s -> 48s) and resume via toggle().
+      audio.position = const Duration(seconds: 15);
+      final entered4 = Completer<void>();
+      final release4 = Completer<void>();
+      audio.gateNextSetSources(entered4, release4);
+
+      settings.streamCacheEnabled = true;
+      await entered4.future;
+      await player.seek(const Duration(seconds: 20));
+      await player.seek(const Duration(seconds: 48));
+      await player.toggle();
+      release4.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(player.playing, isTrue);
+      expect(audio.position, const Duration(seconds: 48));
     },
   );
 }
